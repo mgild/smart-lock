@@ -12,16 +12,15 @@ pub fn generate(parsed: &ParsedStruct) -> proc_macro2::TokenStream {
     let ty_generics = parsed.ty_generics();
     let where_clause = parsed.where_clause();
 
-    let struct_name_str = parsed.name.to_string();
+    let lock_name_str = format!("{}Lock", parsed.name);
     let guard_doc = format!(
-        "Guard holding acquired locks for [`{lock}`].\n\n\
+        "Guard holding acquired locks for [`{lock_name_str}`].\n\n\
          Access fields via `guard.field_name` — uses `Deref`/`DerefMut` based on the lock mode:\n\
          - **`WriteLocked`**: `*guard.field` for read, `*guard.field = val` for write\n\
          - **`ReadLocked`**: `*guard.field` for read only (mutation is a compile error)\n\
          - **`UpgradeLocked`**: `*guard.field` for read, `.upgrade_field().await` to promote to write\n\
          - **`Unlocked`**: compile error on any access\n\n\
-         All locks are released when the guard is dropped.",
-        lock = format!("{}Lock", struct_name_str)
+         All locks are released when the guard is dropped."
     );
 
     let n = parsed.fields.len();

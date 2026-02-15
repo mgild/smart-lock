@@ -12,16 +12,15 @@ pub fn generate(parsed: &ParsedStruct) -> proc_macro2::TokenStream {
     let ty_generics = parsed.ty_generics();
     let where_clause = parsed.where_clause();
 
-    let struct_name_str = parsed.name.to_string();
+    let lock_name_str = format!("{}Lock", parsed.name);
     let builder_doc = format!(
-        "Type-state builder for selecting which fields of [`{lock}`] to lock.\n\n\
+        "Type-state builder for selecting which fields of [`{lock_name_str}`] to lock.\n\n\
          Each field starts as `Unlocked`. Call `.read_field()`, `.write_field()`, or \
          `.upgrade_field()` to select the lock mode, then `.lock().await` to acquire all \
          selected locks atomically.\n\n\
          Locks are acquired in field declaration order to prevent deadlocks. \
          A field can only be locked once (calling `.write_x()` on an already-locked field \
-         is a compile error).",
-        lock = format!("{}Lock", struct_name_str)
+         is a compile error)."
     );
 
     let n = parsed.fields.len();

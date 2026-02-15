@@ -5,7 +5,7 @@
 //! Unlocked fields produce **compile errors** on access, not runtime panics.
 //! Deadlock-free by construction — locks are always acquired in field declaration order.
 //!
-//! **Runtime-agnostic** — built on [`async-lock`], works with tokio, async-std, smol,
+//! **Runtime-agnostic** — built on [`async-lock`](https://docs.rs/async-lock), works with tokio, async-std, smol,
 //! or any async runtime.
 //!
 //! # Quick Start

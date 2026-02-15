@@ -231,6 +231,7 @@ pub fn generate(parsed: &ParsedStruct) -> proc_macro2::TokenStream {
 
         impl<#impl_prefix> #lock_name #ty_generics #where_clause {
             /// Create a new lock wrapping each field in an `RwLock`.
+            #[allow(clippy::too_many_arguments)]
             #vis fn new(#(#new_params),*) -> Self {
                 Self {
                     #(#new_inits)*
