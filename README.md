@@ -67,6 +67,23 @@ let mut guard = guard.upgrade_z().await;  // atomic upgrade
 *guard.z = 42;
 ```
 
+#### `lock_rest_read` — write a few, read the rest
+
+For large structs, listing every field is verbose. `lock_rest_read()` fills any unlocked fields with read locks:
+
+```rust
+let mut guard = state
+    .builder()
+    .write_counter()        // explicit write
+    .lock_rest_read()       // name, data → ReadLocked
+    .await;
+
+*guard.counter += 1;
+println!("{} {:?}", guard.name, guard.data);
+```
+
+Non-blocking variant: `try_lock_rest_read()`.
+
 ### 2. Direct per-field accessors
 
 Quick single-field access without the builder:

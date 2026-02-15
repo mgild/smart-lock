@@ -170,9 +170,75 @@ pub fn generate(parsed: &ParsedStruct) -> proc_macro2::TokenStream {
         }
     };
 
+    // --- lock_rest_read() / try_lock_rest_read() ---
+    let rest_read_bounds: Vec<proc_macro2::TokenStream> = generic_names
+        .iter()
+        .map(|f| quote!(#f: smart_lock::DefaultRead))
+        .collect();
+
+    let rest_read_output_generics: Vec<proc_macro2::TokenStream> = generic_names
+        .iter()
+        .map(|f| quote!(<#f as smart_lock::DefaultRead>::Output))
+        .collect();
+
+    let rest_read_lock_fields: Vec<proc_macro2::TokenStream> = parsed
+        .fields
+        .iter()
+        .enumerate()
+        .map(|(i, field)| {
+            let name = &field.name;
+            let ty = &field.ty;
+            let f = &generic_names[i];
+            quote! {
+                let #name = smart_lock::FieldGuard::<'_, #ty, <#f as smart_lock::DefaultRead>::Output>::acquire(&self.lock.#name).await;
+            }
+        })
+        .collect();
+
+    let rest_read_try_lock_fields: Vec<proc_macro2::TokenStream> = parsed
+        .fields
+        .iter()
+        .enumerate()
+        .map(|(i, field)| {
+            let name = &field.name;
+            let ty = &field.ty;
+            let f = &generic_names[i];
+            quote! {
+                let #name = smart_lock::FieldGuard::<'_, #ty, <#f as smart_lock::DefaultRead>::Output>::try_acquire(&self.lock.#name)?;
+            }
+        })
+        .collect();
+
+    let rest_read_impl = quote! {
+        impl<'a, #impl_prefix #(#rest_read_bounds),*> #builder_name<'a, #bare_prefix #(#generic_names),*> #where_clause {
+            /// Acquire locks for all fields, filling any `Unlocked` fields with read locks.
+            ///
+            /// Fields already set to `WriteLocked` or `UpgradeLocked` keep their mode.
+            /// Fields left `Unlocked` (not explicitly selected) become `ReadLocked`.
+            ///
+            /// This is a shorthand for when you want to write a few fields and read the rest,
+            /// without listing every field in the builder.
+            #vis async fn lock_rest_read(self) -> #guard_name<'a, #bare_prefix #(#rest_read_output_generics),*> {
+                #(#rest_read_lock_fields)*
+                #guard_name { lock: self.lock, #(#field_names),* }
+            }
+
+            /// Try to acquire locks for all fields without blocking, filling `Unlocked` fields
+            /// with read locks.
+            ///
+            /// Returns `None` if any lock is currently held in a conflicting mode.
+            /// On failure, all already-acquired locks are released.
+            #vis fn try_lock_rest_read(self) -> Option<#guard_name<'a, #bare_prefix #(#rest_read_output_generics),*>> {
+                #(#rest_read_try_lock_fields)*
+                Some(#guard_name { lock: self.lock, #(#field_names),* })
+            }
+        }
+    };
+
     quote! {
         #struct_def
         #(#field_impls)*
         #lock_impl
+        #rest_read_impl
     }
 }

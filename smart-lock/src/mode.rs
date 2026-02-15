@@ -62,3 +62,29 @@ impl Readable for UpgradeLocked {}
 pub trait Writable {}
 
 impl Writable for WriteLocked {}
+
+/// Maps a lock mode to its "rest read" output for `lock_rest_read()`.
+///
+/// - `Unlocked` → `ReadLocked` (fill the gap with a read lock)
+/// - `ReadLocked` → `ReadLocked` (identity)
+/// - `WriteLocked` → `WriteLocked` (preserve explicit write)
+/// - `UpgradeLocked` → `UpgradeLocked` (preserve explicit upgrade)
+pub trait DefaultRead {
+    type Output: LockMode;
+}
+
+impl DefaultRead for Unlocked {
+    type Output = ReadLocked;
+}
+
+impl DefaultRead for ReadLocked {
+    type Output = ReadLocked;
+}
+
+impl DefaultRead for WriteLocked {
+    type Output = WriteLocked;
+}
+
+impl DefaultRead for UpgradeLocked {
+    type Output = UpgradeLocked;
+}

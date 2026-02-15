@@ -234,3 +234,15 @@ fn generic_struct_into_inner() {
     assert_eq!(original.value, "hello");
     assert_eq!(original.count, 42);
 }
+
+#[test]
+fn lock_rest_read_smoke() {
+    block_on(async {
+        let state = MyStateLock::new(0, "rest".into(), vec![1]);
+        let mut guard = state.builder().write_counter().lock_rest_read().await;
+        *guard.counter = 42;
+        assert_eq!(*guard.counter, 42);
+        assert_eq!(&*guard.name, "rest");
+        assert_eq!(&*guard.data, &[1]);
+    });
+}

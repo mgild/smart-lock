@@ -515,3 +515,70 @@ async fn try_lock_all_mut_fails_when_read_held() {
     let _hold = state.read_counter().await;
     assert!(state.try_lock_all_mut().is_none());
 }
+
+// --- lock_rest_read ---
+
+#[tokio::test]
+async fn lock_rest_read_fills_unlocked_with_read() {
+    let state = MyStateLock::new(10, "hello".into(), vec![1, 2]);
+
+    // Only write counter, rest should become ReadLocked
+    let mut guard = state.builder().write_counter().lock_rest_read().await;
+    *guard.counter += 1;
+    assert_eq!(*guard.counter, 11);
+    assert_eq!(*guard.name, "hello");
+    assert_eq!(*guard.data, vec![1, 2]);
+}
+
+#[tokio::test]
+async fn lock_rest_read_preserves_explicit_modes() {
+    let state = MyStateLock::new(0, "test".into(), vec![]);
+
+    // Write counter, upgrade name, rest (data) becomes ReadLocked
+    let guard = state
+        .builder()
+        .write_counter()
+        .upgrade_name()
+        .lock_rest_read()
+        .await;
+
+    assert_eq!(*guard.counter, 0);
+    assert_eq!(*guard.name, "test");
+    assert_eq!(*guard.data, vec![]);
+}
+
+#[tokio::test]
+async fn try_lock_rest_read_succeeds() {
+    let state = MyStateLock::new(42, "try".into(), vec![9]);
+
+    let guard = state.builder().write_counter().try_lock_rest_read();
+    assert!(guard.is_some());
+    let mut guard = guard.unwrap();
+    *guard.counter = 100;
+    assert_eq!(*guard.counter, 100);
+    assert_eq!(*guard.name, "try");
+    assert_eq!(*guard.data, vec![9]);
+}
+
+#[tokio::test]
+async fn try_lock_rest_read_fails_on_contention() {
+    let state = MyStateLock::new(0, "held".into(), vec![]);
+
+    // Hold write on name
+    let _hold = state.write_name().await;
+
+    // try_lock_rest_read needs read on name, should fail
+    let guard = state.builder().write_counter().try_lock_rest_read();
+    assert!(guard.is_none());
+}
+
+#[tokio::test]
+async fn lock_rest_read_all_unlocked() {
+    let state = MyStateLock::new(5, "all".into(), vec![1]);
+
+    // No explicit modes — everything becomes ReadLocked
+    let guard = state.builder().lock_rest_read().await;
+    assert_eq!(*guard.counter, 5);
+    assert_eq!(*guard.name, "all");
+    assert_eq!(*guard.data, vec![1]);
+}
