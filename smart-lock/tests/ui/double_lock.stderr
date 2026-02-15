@@ -1,0 +1,15 @@
+error[E0599]: no method named `write_x` found for struct `FooLockBuilder<'_, ReadLocked>` in the current scope
+  --> tests/ui/double_lock.rs:11:42
+   |
+ 3 | #[smart_lock]
+   | ------------- method `write_x` not found for this struct
+...
+11 |     let guard = state.builder().read_x().write_x().lock().await;
+   |                                          ^^^^^^^ method not found in `FooLockBuilder<'_, ReadLocked>`
+   |
+   = note: the method was found for
+           - `FooLockBuilder<'a, Unlocked>`
+help: one of the expressions' fields has a method of the same name
+   |
+11 |     let guard = state.builder().read_x().lock.write_x().lock().await;
+   |                                          +++++

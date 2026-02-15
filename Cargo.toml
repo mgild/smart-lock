@@ -1,0 +1,3 @@
+[workspace]
+members = ["smart-lock", "smart-lock-derive"]
+resolver = "2"

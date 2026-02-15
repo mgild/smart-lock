@@ -1,0 +1,17 @@
+[package]
+name = "smart-lock"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+smart-lock-derive = { path = "../smart-lock-derive" }
+async-lock = "3"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["full"] }
+criterion = { version = "0.5", features = ["async_tokio"] }
+trybuild = "1"
+
+[[bench]]
+name = "contention"
+harness = false

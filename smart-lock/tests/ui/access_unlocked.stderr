@@ -1,0 +1,5 @@
+error[E0614]: type `FieldGuard<'_, u32, Unlocked>` cannot be dereferenced
+  --> tests/ui/access_unlocked.rs:13:13
+   |
+13 |     let _ = *guard.y; // ERROR: Unlocked has no Deref
+   |             ^^^^^^^^ can't be dereferenced
