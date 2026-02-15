@@ -1,0 +1,14 @@
+error[E0599]: no method named `write_synced` found for struct `FooLockBuilder<'a, F0>` in the current scope
+  --> tests/ui/no_lock_no_builder_method.rs:14:33
+   |
+ 4 | #[smart_lock]
+   | ------------- method `write_synced` not found for this struct
+...
+14 |     let guard = state.builder().write_synced().lock().await;
+   |                                 ^^^^^^^^^^^^
+   |
+help: there is a method `write_x` with a similar name
+   |
+14 -     let guard = state.builder().write_synced().lock().await;
+14 +     let guard = state.builder().write_x().lock().await;
+   |

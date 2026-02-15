@@ -1,0 +1,8 @@
+error[E0599]: no method named `read_synced` found for struct `FooLock` in the current scope
+  --> tests/ui/no_lock_no_per_field_lock.rs:14:20
+   |
+ 4 | #[smart_lock]
+   | ------------- method `read_synced` not found for this struct
+...
+14 |     let _r = state.read_synced().await;
+   |                    ^^^^^^^^^^^ method not found in `FooLock`

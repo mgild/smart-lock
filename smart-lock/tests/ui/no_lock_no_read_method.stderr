@@ -1,0 +1,8 @@
+error[E0599]: no method named `read_synced` found for struct `FooLockBuilder<'a, F0>` in the current scope
+  --> tests/ui/no_lock_no_read_method.rs:14:33
+   |
+ 4 | #[smart_lock]
+   | ------------- method `read_synced` not found for this struct
+...
+14 |     let guard = state.builder().read_synced().lock().await;
+   |                                 ^^^^^^^^^^^ method not found in `FooLockBuilder<'_, Unlocked>`
