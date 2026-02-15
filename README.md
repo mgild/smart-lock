@@ -168,6 +168,8 @@ let mut guard = guard.upgrade_counter().await;
 
 Only one upgradable reader per field at a time, preventing the classic two-upgraders deadlock.
 
+> **Warning:** While `upgrade_field().await` waits for readers to drain, the guard continues holding all other locks. If another task holds a read lock on that field and is waiting to upgrade a different field that *this* guard holds, both tasks will deadlock. To upgrade multiple fields safely, either acquire them as `write_*()` upfront or use `.relock()` to drop all locks and re-acquire with the desired modes.
+
 ### Downgrade
 
 Write or upgradable locks can be atomically downgraded to read locks:

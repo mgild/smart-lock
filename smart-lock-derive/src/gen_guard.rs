@@ -89,8 +89,15 @@ pub fn generate(parsed: &ParsedStruct) -> proc_macro2::TokenStream {
 
         let upgrade_doc = format!(
             "Atomically upgrade `{}` from upgradable read to exclusive write.\n\n\
-             Waits for all other readers to drain. Other fields remain locked as before.",
-            field_name_str
+             Waits for all other readers to drain. Other fields remain locked as before.\n\n\
+             # Deadlock warning\n\n\
+             While waiting for readers to drain, this guard continues holding all other locks. \
+             If another task holds a read lock on `{}` and is waiting to upgrade a different \
+             field that *this* guard holds, both tasks will deadlock.\n\n\
+             To upgrade multiple fields safely, either acquire them as `write_*()` upfront \
+             or use [`.relock()`](Self::relock) to drop all locks and re-acquire with the \
+             desired modes.",
+            field_name_str, field_name_str
         );
         let downgrade_from_upgrade_doc = format!(
             "Atomically downgrade `{}` from upgradable read to shared read.\n\n\
