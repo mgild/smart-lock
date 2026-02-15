@@ -851,6 +851,112 @@ async fn zst_field_into_inner() {
     assert_eq!(original.marker, ());
 }
 
+// --- Display impl (forwards to T) ---
+
+#[tokio::test]
+async fn display_impl_on_field_guard() {
+    let state = MyStateLock::new(42, "hello".into(), vec![]);
+    let guard = state.builder().read_counter().read_name().lock().await;
+    assert_eq!(format!("{}", guard.counter), "42");
+    assert_eq!(format!("{}", guard.name), "hello");
+}
+
+// --- AsRef impl ---
+
+#[tokio::test]
+async fn as_ref_on_field_guard() {
+    let state = MyStateLock::new(42, "hello".into(), vec![1, 2]);
+    let guard = state.builder().read_counter().read_data().lock().await;
+    let counter_ref: &u32 = guard.counter.as_ref();
+    assert_eq!(*counter_ref, 42);
+    let data_ref: &Vec<u8> = guard.data.as_ref();
+    assert_eq!(data_ref, &vec![1, 2]);
+}
+
+// --- Large struct correctness (10 fields) ---
+
+#[smart_lock]
+struct TenFields {
+    f0: u32,
+    f1: u32,
+    f2: u32,
+    f3: u32,
+    f4: u32,
+    f5: u32,
+    f6: u32,
+    f7: u32,
+    f8: u32,
+    f9: u32,
+}
+
+#[tokio::test]
+async fn large_struct_write_all_read_all() {
+    let state = TenFieldsLock::new(0, 1, 2, 3, 4, 5, 6, 7, 8, 9);
+
+    // Write all fields
+    {
+        let mut guard = state.lock_all_mut().await;
+        *guard.f0 = 10;
+        *guard.f5 = 50;
+        *guard.f9 = 90;
+    }
+
+    // Read all and verify
+    let guard = state.lock_all().await;
+    assert_eq!(*guard.f0, 10);
+    assert_eq!(*guard.f1, 1);
+    assert_eq!(*guard.f5, 50);
+    assert_eq!(*guard.f9, 90);
+}
+
+#[tokio::test]
+async fn large_struct_selective_builder() {
+    let state = TenFieldsLock::new(0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+
+    let mut guard = state
+        .builder()
+        .write_f0()
+        .read_f3()
+        .write_f7()
+        .lock_rest_read()
+        .await;
+
+    *guard.f0 = 100;
+    *guard.f7 = 700;
+    assert_eq!(*guard.f3, 0);
+    assert_eq!(*guard.f5, 0); // rest locked as read
+}
+
+#[tokio::test]
+async fn large_struct_concurrent_different_fields() {
+    use std::sync::Arc;
+    let state = Arc::new(TenFieldsLock::new(0, 0, 0, 0, 0, 0, 0, 0, 0, 0));
+
+    let s1 = state.clone();
+    let s2 = state.clone();
+
+    let h1 = tokio::spawn(async move {
+        for _ in 0..1000 {
+            let mut g = s1.builder().write_f0().lock().await;
+            *g.f0 += 1;
+        }
+    });
+
+    let h2 = tokio::spawn(async move {
+        for _ in 0..1000 {
+            let mut g = s2.builder().write_f9().lock().await;
+            *g.f9 += 1;
+        }
+    });
+
+    h1.await.unwrap();
+    h2.await.unwrap();
+
+    let guard = state.lock_all().await;
+    assert_eq!(*guard.f0, 1000);
+    assert_eq!(*guard.f9, 1000);
+}
+
 // --- Debug impl ---
 
 #[tokio::test]

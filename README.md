@@ -378,6 +378,8 @@ See [`examples/session_store.rs`](smart-lock/examples/session_store.rs) for a re
 
 Rust **1.78** or later (requires `#[diagnostic::on_unimplemented]`).
 
+MSRV bumps are only made in minor or major releases and are documented in the [CHANGELOG](CHANGELOG.md).
+
 ## License
 
 MIT OR Apache-2.0

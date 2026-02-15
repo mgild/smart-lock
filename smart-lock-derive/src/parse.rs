@@ -110,25 +110,37 @@ pub fn parse(attr: proc_macro2::TokenStream, item: &ItemStruct) -> syn::Result<P
         }
     };
 
-    let fields: Vec<ParsedField> = named_fields
-        .iter()
-        .map(|f| {
-            let no_lock = f.attrs.iter().any(|a| a.path().is_ident("no_lock"));
-            let attrs: Vec<Attribute> = f
-                .attrs
-                .iter()
-                .filter(|a| !a.path().is_ident("no_lock"))
-                .cloned()
-                .collect();
-            ParsedField {
-                name: f.ident.clone().unwrap(),
-                ty: f.ty.clone(),
-                vis: f.vis.clone(),
-                attrs,
-                no_lock,
-            }
-        })
-        .collect();
+    let mut fields = Vec::new();
+    for f in named_fields.iter() {
+        let no_lock_attrs: Vec<&Attribute> = f
+            .attrs
+            .iter()
+            .filter(|a| a.path().is_ident("no_lock"))
+            .collect();
+
+        if no_lock_attrs.len() > 1 {
+            return Err(syn::Error::new_spanned(
+                no_lock_attrs[1],
+                "duplicate #[no_lock] attribute",
+            ));
+        }
+
+        let no_lock = !no_lock_attrs.is_empty();
+        let attrs: Vec<Attribute> = f
+            .attrs
+            .iter()
+            .filter(|a| !a.path().is_ident("no_lock"))
+            .cloned()
+            .collect();
+
+        fields.push(ParsedField {
+            name: f.ident.clone().unwrap(),
+            ty: f.ty.clone(),
+            vis: f.vis.clone(),
+            attrs,
+            no_lock,
+        });
+    }
 
     Ok(ParsedStruct {
         vis: item.vis.clone(),

@@ -1,0 +1,13 @@
+error: duplicate #[no_lock] attribute
+ --> tests/ui/duplicate_no_lock.rs:7:5
+  |
+7 |     #[no_lock]
+  |     ^^^^^^^^^^
+
+warning: unused import: `std::sync::atomic::AtomicU32`
+ --> tests/ui/duplicate_no_lock.rs:2:5
+  |
+2 | use std::sync::atomic::AtomicU32;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default

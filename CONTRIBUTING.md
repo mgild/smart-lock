@@ -44,6 +44,12 @@ Please include:
 - Minimal reproduction case
 - Expected vs actual behavior
 
+## Stability Guarantees
+
+- **MSRV policy**: The minimum supported Rust version (currently 1.78) is only bumped in minor or major releases, never in patch releases. MSRV bumps are noted in the CHANGELOG.
+- **Generated type names**: The names `FooLock`, `FooLockBuilder`, and `FooLockGuard` (where `Foo` is the annotated struct) are part of the semver-stable public API.
+- **Public API**: All items re-exported from `smart_lock::*` are covered by semver. Internal items behind `#[doc(hidden)]` are not.
+
 ## License
 
 By contributing, you agree that your contributions will be dual-licensed under MIT OR Apache-2.0.

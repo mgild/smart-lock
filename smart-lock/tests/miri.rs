@@ -395,6 +395,30 @@ fn guard_try_upgrade_fails_returns_original() {
     });
 }
 
+// --- Display ---
+
+#[test]
+fn display_impl_on_field_guard() {
+    block_on(async {
+        let state = MyStateLock::new(42, "hello".into(), vec![]);
+        let guard = state.builder().read_counter().read_name().lock().await;
+        assert_eq!(format!("{}", guard.counter), "42");
+        assert_eq!(format!("{}", guard.name), "hello");
+    });
+}
+
+// --- AsRef ---
+
+#[test]
+fn as_ref_on_field_guard() {
+    block_on(async {
+        let state = MyStateLock::new(42, "hello".into(), vec![1]);
+        let guard = state.builder().read_counter().lock().await;
+        let r: &u32 = guard.counter.as_ref();
+        assert_eq!(*r, 42);
+    });
+}
+
 // --- Debug ---
 
 #[test]

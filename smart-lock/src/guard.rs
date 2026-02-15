@@ -20,6 +20,10 @@ enum FieldGuardInner<'a, T> {
 /// - `FieldGuard<'a, T, ReadLocked>` — `Deref` only
 /// - `FieldGuard<'a, T, UpgradeLocked>` — `Deref` only, can `.upgrade().await` to `WriteLocked`
 /// - `FieldGuard<'a, T, Unlocked>` — no access (compile error on dereference)
+///
+/// `FieldGuard` is `Send + Sync` when `T: Send + Sync` (inherited from the
+/// underlying [`async_lock`] guards). The generated lock struct includes a
+/// compile-time assertion that it is `Send + Sync`.
 pub struct FieldGuard<'a, T, M> {
     inner: FieldGuardInner<'a, T>,
     _mode: PhantomData<M>,
@@ -194,5 +198,23 @@ impl<T, M: Writable + Readable> DerefMut for FieldGuard<'_, T, M> {
             FieldGuardInner::Write(g) => &mut *g,
             _ => unreachable!(),
         }
+    }
+}
+
+// --- Display: any Readable mode, forwards to T ---
+
+impl<T: fmt::Display, M: Readable> fmt::Display for FieldGuard<'_, T, M> {
+    #[inline(always)]
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Display::fmt(&**self, f)
+    }
+}
+
+// --- AsRef: any Readable mode ---
+
+impl<T, M: Readable> AsRef<T> for FieldGuard<'_, T, M> {
+    #[inline(always)]
+    fn as_ref(&self) -> &T {
+        self
     }
 }
