@@ -287,9 +287,9 @@ See [`examples/session_store.rs`](smart-lock/examples/session_store.rs) for a re
 
 ## Limitations
 
-- Maximum 64 fields per struct
 - Named fields only (no tuple structs or unit structs)
 - Field access through `Deref`/`DerefMut` (use `*guard.field` syntax)
+- `into_inner()` consumes `self` — when behind `Arc`, unwrap first: `Arc::try_unwrap(arc).unwrap().into_inner()`
 
 ## License
 

@@ -115,18 +115,6 @@ pub fn parse(attr: proc_macro2::TokenStream, item: &ItemStruct) -> syn::Result<P
         })
         .collect();
 
-    // Validate max 64 fields
-    if fields.len() > 64 {
-        return Err(syn::Error::new_spanned(
-            &item.ident,
-            format!(
-                "smart_lock supports at most 64 fields, but `{}` has {}",
-                item.ident,
-                fields.len()
-            ),
-        ));
-    }
-
     Ok(ParsedStruct {
         vis: item.vis.clone(),
         name: item.ident.clone(),

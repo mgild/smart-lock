@@ -160,8 +160,12 @@ pub fn generate(parsed: &ParsedStruct) -> proc_macro2::TokenStream {
         .collect();
 
     let into_inner_doc = format!(
-        "Consume the lock and return the original [`{}`] with all field values.",
-        struct_name_str
+        "Consume the lock and return the original [`{name}`] with all field values.\n\n\
+         When the lock is behind an `Arc`, unwrap it first:\n\
+         ```ignore\n\
+         let inner = Arc::try_unwrap(arc).expect(\"other refs exist\").into_inner();\n\
+         ```",
+        name = struct_name_str
     );
 
     let get_mut_accessors: Vec<proc_macro2::TokenStream> = parsed
