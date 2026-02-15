@@ -304,6 +304,10 @@ See [`examples/session_store.rs`](smart-lock/examples/session_store.rs) for a re
 - Field access through `Deref`/`DerefMut` (use `*guard.field` syntax)
 - `into_inner()` consumes `self` — when behind `Arc`, unwrap first: `Arc::try_unwrap(arc).unwrap().into_inner()`
 
+## Minimum Supported Rust Version
+
+Rust **1.78** or later (requires `#[diagnostic::on_unimplemented]`).
+
 ## License
 
 MIT OR Apache-2.0
