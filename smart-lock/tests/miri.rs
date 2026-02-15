@@ -403,12 +403,12 @@ fn partial_eq_with_value() {
         let state = MyStateLock::new(42, "hello".into(), vec![]);
         let guard = state.builder().read_counter().read_name().lock().await;
         assert!(guard.counter == 42);
-        assert!(*guard.name == "hello");
+        assert!(guard.name == "hello"); // String: PartialEq<&str>
     });
 }
 
 #[test]
-fn ord_on_field_guard() {
+fn partial_ord_with_value() {
     block_on(async {
         let state = MyStateLock::new(10, String::new(), vec![]);
         let guard = state.builder().read_counter().lock().await;

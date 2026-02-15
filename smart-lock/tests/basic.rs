@@ -861,27 +861,28 @@ async fn display_impl_on_field_guard() {
     assert_eq!(format!("{}", guard.name), "hello");
 }
 
-// --- PartialEq / Ord / Hash ---
-
-#[tokio::test]
-async fn partial_eq_between_guards() {
-    let s1 = MyStateLock::new(42, "hello".into(), vec![]);
-    let s2 = MyStateLock::new(42, "hello".into(), vec![]);
-    let g1 = s1.builder().read_counter().lock().await;
-    let g2 = s2.builder().read_counter().lock().await;
-    assert_eq!(g1.counter, g2.counter);
-}
+// --- PartialEq / PartialOrd / Hash ---
 
 #[tokio::test]
 async fn partial_eq_with_value() {
     let state = MyStateLock::new(42, "hello".into(), vec![]);
     let guard = state.builder().read_counter().read_name().lock().await;
     assert!(guard.counter == 42);
-    assert!(*guard.name == "hello");
+    assert!(guard.name == "hello"); // String: PartialEq<&str>
 }
 
 #[tokio::test]
-async fn ord_on_field_guard() {
+async fn partial_eq_string_variants() {
+    let state = MyStateLock::new(0, "hello world".into(), vec![]);
+    let guard = state.builder().read_name().lock().await;
+    // All these work thanks to String's PartialEq impls
+    assert!(guard.name == "hello world");
+    let owned = String::from("hello world");
+    assert!(guard.name == *owned);
+}
+
+#[tokio::test]
+async fn partial_ord_with_value() {
     let state = MyStateLock::new(10, "".into(), vec![]);
     let guard = state.builder().read_counter().lock().await;
     assert!(guard.counter < 20);

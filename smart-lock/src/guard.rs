@@ -220,43 +220,30 @@ impl<T, M: Readable> AsRef<T> for FieldGuard<'_, T, M> {
 }
 
 // --- PartialEq: forwards to T ---
+//
+// Generic over the RHS type `U` so that comparisons like `guard.name == "hello"`
+// work — `String: PartialEq<&str>` is leveraged automatically.
+// Guard-to-guard comparison uses `*guard.x == *other_guard.x` via Deref.
 
-impl<T: PartialEq, M: Readable> PartialEq for FieldGuard<'_, T, M> {
+impl<T, U: ?Sized, M: Readable> PartialEq<U> for FieldGuard<'_, T, M>
+where
+    T: PartialEq<U>,
+{
     #[inline(always)]
-    fn eq(&self, other: &Self) -> bool {
-        **self == **other
+    fn eq(&self, other: &U) -> bool {
+        (**self).eq(other)
     }
 }
 
-impl<T: PartialEq, M: Readable> PartialEq<T> for FieldGuard<'_, T, M> {
+// --- PartialOrd: forwards to T ---
+
+impl<T, U: ?Sized, M: Readable> PartialOrd<U> for FieldGuard<'_, T, M>
+where
+    T: PartialOrd<U>,
+{
     #[inline(always)]
-    fn eq(&self, other: &T) -> bool {
-        **self == *other
-    }
-}
-
-impl<T: Eq, M: Readable> Eq for FieldGuard<'_, T, M> {}
-
-// --- PartialOrd / Ord: forwards to T ---
-
-impl<T: PartialOrd, M: Readable> PartialOrd for FieldGuard<'_, T, M> {
-    #[inline(always)]
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        (**self).partial_cmp(&**other)
-    }
-}
-
-impl<T: PartialOrd, M: Readable> PartialOrd<T> for FieldGuard<'_, T, M> {
-    #[inline(always)]
-    fn partial_cmp(&self, other: &T) -> Option<std::cmp::Ordering> {
+    fn partial_cmp(&self, other: &U) -> Option<std::cmp::Ordering> {
         (**self).partial_cmp(other)
-    }
-}
-
-impl<T: Ord, M: Readable> Ord for FieldGuard<'_, T, M> {
-    #[inline(always)]
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        (**self).cmp(&**other)
     }
 }
 
