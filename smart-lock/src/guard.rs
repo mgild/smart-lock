@@ -1,9 +1,11 @@
+use async_lock::{RwLock, RwLockReadGuard, RwLockUpgradableReadGuard, RwLockWriteGuard};
 use std::fmt;
 use std::marker::PhantomData;
 use std::ops::{Deref, DerefMut};
-use async_lock::{RwLock, RwLockReadGuard, RwLockUpgradableReadGuard, RwLockWriteGuard};
 
-use crate::mode::{LockMode, LockModeKind, Readable, ReadLocked, UpgradeLocked, Writable, WriteLocked};
+use crate::mode::{
+    LockMode, LockModeKind, ReadLocked, Readable, UpgradeLocked, Writable, WriteLocked,
+};
 
 enum FieldGuardInner<'a, T> {
     Read(RwLockReadGuard<'a, T>),
@@ -25,6 +27,10 @@ pub struct FieldGuard<'a, T, M> {
 
 impl<'a, T, M> FieldGuard<'a, T, M> {
     /// Acquire the appropriate lock based on the mode's const discriminant.
+    ///
+    /// Dispatches to [`RwLock::read`], [`RwLock::write`], or
+    /// [`RwLock::upgradable_read`] depending on `M::MODE`. For [`Unlocked`](crate::Unlocked)
+    /// fields, returns a no-op guard without touching the lock.
     #[inline(always)]
     pub async fn acquire(lock: &'a RwLock<T>) -> Self
     where
@@ -43,7 +49,9 @@ impl<'a, T, M> FieldGuard<'a, T, M> {
     }
 
     /// Try to acquire the appropriate lock without blocking.
-    /// Returns `None` if the lock is held. Unlocked fields always succeed.
+    ///
+    /// Returns `None` if the lock cannot be immediately acquired.
+    /// [`Unlocked`](crate::Unlocked) fields always succeed (no lock touched).
     #[inline(always)]
     pub fn try_acquire(lock: &'a RwLock<T>) -> Option<Self>
     where
@@ -61,7 +69,11 @@ impl<'a, T, M> FieldGuard<'a, T, M> {
         })
     }
 
-    /// Create a no-op guard for unlocked fields. Zero-cost: no lock acquired.
+    /// Create a no-op guard for [`Unlocked`](crate::Unlocked) fields.
+    ///
+    /// Zero-cost: no lock is acquired. Attempting to dereference an unlocked
+    /// guard is a compile error (neither [`Deref`] nor [`DerefMut`] is implemented
+    /// for `Unlocked`).
     #[inline(always)]
     pub fn unlocked() -> Self {
         Self {
@@ -73,6 +85,9 @@ impl<'a, T, M> FieldGuard<'a, T, M> {
 
 // --- Upgrade: UpgradeLocked → WriteLocked (async, waits for readers to drain) ---
 impl<'a, T> FieldGuard<'a, T, UpgradeLocked> {
+    /// Atomically upgrade from upgradable read to exclusive write.
+    ///
+    /// Waits for all other readers to drain before granting write access.
     #[inline(always)]
     pub async fn upgrade(self) -> FieldGuard<'a, T, WriteLocked> {
         match self.inner {
@@ -92,18 +107,16 @@ impl<'a, T> FieldGuard<'a, T, UpgradeLocked> {
     #[inline(always)]
     pub fn try_upgrade(self) -> Result<FieldGuard<'a, T, WriteLocked>, Self> {
         match self.inner {
-            FieldGuardInner::Upgrade(g) => {
-                match RwLockUpgradableReadGuard::try_upgrade(g) {
-                    Ok(write_guard) => Ok(FieldGuard {
-                        inner: FieldGuardInner::Write(write_guard),
-                        _mode: PhantomData,
-                    }),
-                    Err(upgrade_guard) => Err(FieldGuard {
-                        inner: FieldGuardInner::Upgrade(upgrade_guard),
-                        _mode: PhantomData,
-                    }),
-                }
-            }
+            FieldGuardInner::Upgrade(g) => match RwLockUpgradableReadGuard::try_upgrade(g) {
+                Ok(write_guard) => Ok(FieldGuard {
+                    inner: FieldGuardInner::Write(write_guard),
+                    _mode: PhantomData,
+                }),
+                Err(upgrade_guard) => Err(FieldGuard {
+                    inner: FieldGuardInner::Upgrade(upgrade_guard),
+                    _mode: PhantomData,
+                }),
+            },
             _ => unreachable!(),
         }
     }
@@ -111,6 +124,9 @@ impl<'a, T> FieldGuard<'a, T, UpgradeLocked> {
 
 // --- Downgrade: WriteLocked → ReadLocked (sync, atomic) ---
 impl<'a, T> FieldGuard<'a, T, WriteLocked> {
+    /// Atomically downgrade from exclusive write to shared read.
+    ///
+    /// Immediately allows other readers. Synchronous — no `.await` needed.
     #[inline(always)]
     pub fn downgrade(self) -> FieldGuard<'a, T, ReadLocked> {
         match self.inner {
@@ -125,6 +141,10 @@ impl<'a, T> FieldGuard<'a, T, WriteLocked> {
 
 // --- Downgrade: UpgradeLocked → ReadLocked (sync, atomic) ---
 impl<'a, T> FieldGuard<'a, T, UpgradeLocked> {
+    /// Atomically downgrade from upgradable read to shared read.
+    ///
+    /// Releases the upgrade slot, allowing other tasks to acquire upgradable locks.
+    /// Synchronous — no `.await` needed.
     #[inline(always)]
     pub fn downgrade(self) -> FieldGuard<'a, T, ReadLocked> {
         match self.inner {

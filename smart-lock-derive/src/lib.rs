@@ -1,11 +1,11 @@
 use proc_macro::TokenStream;
 use syn::{parse_macro_input, ItemStruct};
 
-mod parse;
-mod gen_lock;
 mod gen_builder;
-mod gen_guard;
 mod gen_from;
+mod gen_guard;
+mod gen_lock;
+mod parse;
 
 #[proc_macro_attribute]
 pub fn smart_lock(attr: TokenStream, item: TokenStream) -> TokenStream {

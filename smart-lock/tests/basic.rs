@@ -202,7 +202,7 @@ async fn downgrade_write_to_read() {
     let guard = guard.downgrade_counter();
     assert_eq!(*guard.counter, 42); // can still read
     assert_eq!(*guard.name, "hello"); // name unchanged
-    // *guard.counter = 0; // would be compile error — now ReadLocked
+                                      // *guard.counter = 0; // would be compile error — now ReadLocked
 }
 
 #[tokio::test]
@@ -816,6 +816,39 @@ async fn guard_try_upgrade_with_no_lock_field() {
     let mut guard = guard.try_upgrade_counter().unwrap();
     *guard.counter = 42;
     assert_eq!(guard.synced.load(Ordering::Relaxed), 5);
+}
+
+// --- Zero-sized type (ZST) fields ---
+
+#[smart_lock]
+struct WithZst {
+    value: u32,
+    marker: (),
+}
+
+#[tokio::test]
+async fn zst_field_lock_all() {
+    let state = WithZstLock::new(42, ());
+    let guard = state.lock_all().await;
+    assert_eq!(*guard.value, 42);
+    assert_eq!(*guard.marker, ());
+}
+
+#[tokio::test]
+async fn zst_field_write_and_read() {
+    let state = WithZstLock::new(0, ());
+    let mut guard = state.builder().write_value().read_marker().lock().await;
+    *guard.value = 10;
+    assert_eq!(*guard.value, 10);
+    assert_eq!(*guard.marker, ());
+}
+
+#[tokio::test]
+async fn zst_field_into_inner() {
+    let state = WithZstLock::new(99, ());
+    let original = state.into_inner();
+    assert_eq!(original.value, 99);
+    assert_eq!(original.marker, ());
 }
 
 // --- Debug impl ---

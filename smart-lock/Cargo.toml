@@ -6,11 +6,17 @@ rust-version = "1.78"
 license = "MIT OR Apache-2.0"
 description = "Per-field async RwLock with compile-time access control via proc macro"
 repository = "https://github.com/mgild/smart-lock"
+homepage = "https://github.com/mgild/smart-lock"
+documentation = "https://docs.rs/smart-lock"
+readme = "../README.md"
 keywords = ["async", "lock", "rwlock", "concurrency", "proc-macro"]
 categories = ["concurrency", "asynchronous"]
 
+[features]
+default = []
+
 [dependencies]
-smart-lock-derive = { path = "../smart-lock-derive" }
+smart-lock-derive = { version = "0.1.0", path = "../smart-lock-derive" }
 async-lock = "3"
 
 [dev-dependencies]

@@ -68,12 +68,7 @@ async fn main() {
                 let token = format!("token-{}-{}", task_id, i % 10);
 
                 // Read sessions and write stats — config is untouched
-                let mut guard = s
-                    .builder()
-                    .read_sessions()
-                    .write_stats()
-                    .lock()
-                    .await;
+                let mut guard = s.builder().read_sessions().write_stats().lock().await;
 
                 guard.stats.total_lookups += 1;
                 if guard.sessions.contains_key(&token) {
@@ -94,12 +89,7 @@ async fn main() {
 
                 // Write sessions + read config (check max_sessions)
                 // Stats are untouched — doesn't block lookup tasks' stats writes
-                let mut guard = s
-                    .builder()
-                    .write_sessions()
-                    .read_config()
-                    .lock()
-                    .await;
+                let mut guard = s.builder().write_sessions().read_config().lock().await;
 
                 if guard.sessions.len() < guard.config.max_sessions {
                     guard.sessions.insert(

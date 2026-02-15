@@ -6,6 +6,10 @@ rust-version = "1.78"
 license = "MIT OR Apache-2.0"
 description = "Proc macro for smart-lock: per-field async RwLock with compile-time access control"
 repository = "https://github.com/mgild/smart-lock"
+homepage = "https://github.com/mgild/smart-lock"
+documentation = "https://docs.rs/smart-lock"
+keywords = ["proc-macro", "lock", "rwlock", "async", "concurrency"]
+categories = ["development-tools::procedural-macro-helpers"]
 
 [lib]
 proc-macro = true

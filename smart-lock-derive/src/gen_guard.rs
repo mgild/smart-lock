@@ -1,5 +1,5 @@
 use crate::parse::ParsedStruct;
-use quote::{quote, format_ident};
+use quote::{format_ident, quote};
 
 pub fn generate(parsed: &ParsedStruct) -> proc_macro2::TokenStream {
     let vis = &parsed.vis;
@@ -27,21 +27,24 @@ pub fn generate(parsed: &ParsedStruct) -> proc_macro2::TokenStream {
     // Map field index → generic index (None for no_lock fields)
     let field_to_generic: Vec<Option<usize>> = {
         let mut gi = 0;
-        parsed.fields.iter().map(|f| {
-            if f.no_lock {
-                None
-            } else {
-                let idx = gi;
-                gi += 1;
-                Some(idx)
-            }
-        }).collect()
+        parsed
+            .fields
+            .iter()
+            .map(|f| {
+                if f.no_lock {
+                    None
+                } else {
+                    let idx = gi;
+                    gi += 1;
+                    Some(idx)
+                }
+            })
+            .collect()
     };
 
     let locked_count = field_to_generic.iter().filter(|g| g.is_some()).count();
-    let generic_names: Vec<syn::Ident> = (0..locked_count)
-        .map(|i| format_ident!("F{}", i))
-        .collect();
+    let generic_names: Vec<syn::Ident> =
+        (0..locked_count).map(|i| format_ident!("F{}", i)).collect();
 
     let guard_fields: Vec<proc_macro2::TokenStream> = parsed
         .fields
@@ -87,7 +90,9 @@ pub fn generate(parsed: &ParsedStruct) -> proc_macro2::TokenStream {
     let mut transition_impls = Vec::new();
 
     for (i, field) in parsed.fields.iter().enumerate() {
-        if field.no_lock { continue; }
+        if field.no_lock {
+            continue;
+        }
 
         let gi = field_to_generic[i].unwrap();
         let field_name = &field.name;
@@ -125,7 +130,8 @@ pub fn generate(parsed: &ParsedStruct) -> proc_macro2::TokenStream {
             .map(|(_, name)| name)
             .collect();
 
-        let other_fields: Vec<proc_macro2::TokenStream> = parsed.fields
+        let other_fields: Vec<proc_macro2::TokenStream> = parsed
+            .fields
             .iter()
             .enumerate()
             .filter(|(j, _)| *j != i)
@@ -136,9 +142,16 @@ pub fn generate(parsed: &ParsedStruct) -> proc_macro2::TokenStream {
             .collect();
 
         let make_params = |mode: proc_macro2::TokenStream| -> Vec<proc_macro2::TokenStream> {
-            (0..locked_count).map(|j| {
-                if j == gi { mode.clone() } else { let f = &generic_names[j]; quote!(#f) }
-            }).collect()
+            (0..locked_count)
+                .map(|j| {
+                    if j == gi {
+                        mode.clone()
+                    } else {
+                        let f = &generic_names[j];
+                        quote!(#f)
+                    }
+                })
+                .collect()
         };
 
         let upgrade_input = make_params(quote!(smart_lock::UpgradeLocked));

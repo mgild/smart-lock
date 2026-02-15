@@ -1,5 +1,5 @@
 use crate::parse::ParsedStruct;
-use quote::{quote, format_ident};
+use quote::{format_ident, quote};
 
 pub fn generate(parsed: &ParsedStruct) -> proc_macro2::TokenStream {
     let struct_name = &parsed.name;

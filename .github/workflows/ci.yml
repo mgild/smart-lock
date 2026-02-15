@@ -40,6 +40,15 @@ jobs:
           components: rustfmt
       - run: cargo fmt --all -- --check
 
+  doc:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo doc --no-deps
+        env:
+          RUSTDOCFLAGS: -D warnings
+
   miri:
     runs-on: ubuntu-latest
     steps:
@@ -48,3 +57,11 @@ jobs:
         with:
           components: miri
       - run: cargo +nightly miri test --test miri
+
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: rustsec/audit-check@v2.0.0
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}

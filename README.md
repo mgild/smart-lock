@@ -1,5 +1,10 @@
 # smart-lock
 
+[![Crates.io](https://img.shields.io/crates/v/smart-lock.svg)](https://crates.io/crates/smart-lock)
+[![Documentation](https://docs.rs/smart-lock/badge.svg)](https://docs.rs/smart-lock)
+[![CI](https://github.com/mgild/smart-lock/actions/workflows/ci.yml/badge.svg)](https://github.com/mgild/smart-lock/actions)
+[![License](https://img.shields.io/crates/l/smart-lock.svg)](https://github.com/mgild/smart-lock#license)
+
 Per-field async `RwLock` with **compile-time access control** via proc macro.
 
 Annotate a struct with `#[smart_lock]` and get a type-safe builder that lets you select exactly which fields to lock and how (read, write, or upgradable). Unlocked fields produce **compile errors** on access, not runtime panics. Deadlock-free by construction.
@@ -350,6 +355,18 @@ See [`examples/session_store.rs`](smart-lock/examples/session_store.rs) for a re
 - Collections (HashMap, Vec, etc.) — use [`DashMap`](https://docs.rs/dashmap)/[`DashSet`](https://docs.rs/dashset) instead (shard-level locking, much less memory overhead)
 - Single-field access patterns — just use `RwLock<T>` directly
 - Read-heavy workloads accessing all fields — single `RwLock<Struct>` is faster
+
+## Comparison
+
+| Feature | `RwLock<Struct>` | Manual per-field | **smart-lock** |
+|---------|-----------------|-----------------|----------------|
+| Independent field locking | No | Yes | Yes |
+| Compile-time access checks | No | No | Yes |
+| Deadlock prevention | N/A | Manual ordering | Automatic (declaration order) |
+| Upgradable locks | Runtime only | Manual | Type-safe, per-field |
+| Boilerplate | None | High (N locks, N guards) | None (`#[smart_lock]`) |
+| Self-synchronized fields | N/A | N/A | `#[no_lock]` |
+| Runtime overhead vs manual | Lower (1 lock) | Baseline | ~same (FieldGuard abstraction) |
 
 ## Limitations
 

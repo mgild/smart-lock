@@ -18,7 +18,13 @@ struct MyState {
 fn create_and_lock_all_fields_mut() {
     block_on(async {
         let state = MyStateLock::new(0, "hello".into(), vec![1, 2, 3]);
-        let mut guard = state.builder().write_counter().write_name().write_data().lock().await;
+        let mut guard = state
+            .builder()
+            .write_counter()
+            .write_name()
+            .write_data()
+            .lock()
+            .await;
         *guard.counter = 42;
         *guard.name = "world".into();
         guard.data.push(4);
@@ -73,7 +79,11 @@ fn into_inner_reconstructs_original() {
 
 #[test]
 fn from_impl() {
-    let original = MyState { counter: 99, name: "from".into(), data: vec![1] };
+    let original = MyState {
+        counter: 99,
+        name: "from".into(),
+        data: vec![1],
+    };
     let state: MyStateLock = original.into();
     let back = state.into_inner();
     assert_eq!(back.counter, 99);
@@ -307,7 +317,11 @@ fn no_lock_into_inner() {
 
 #[test]
 fn no_lock_from_impl() {
-    let original = WithNoLock { counter: 10, synced: AtomicU32::new(20), name: "from".into() };
+    let original = WithNoLock {
+        counter: 10,
+        synced: AtomicU32::new(20),
+        name: "from".into(),
+    };
     let state: WithNoLockLock = original.into();
     let back = state.into_inner();
     assert_eq!(back.counter, 10);
@@ -400,4 +414,30 @@ fn guard_debug_impl() {
         let debug_str = format!("{:?}", guard);
         assert!(debug_str.contains("MyStateLockGuard"));
     });
+}
+
+// --- Zero-sized type (ZST) fields ---
+
+#[smart_lock]
+struct WithZst {
+    value: u32,
+    marker: (),
+}
+
+#[test]
+fn zst_field_lock_all() {
+    block_on(async {
+        let state = WithZstLock::new(42, ());
+        let guard = state.lock_all().await;
+        assert_eq!(*guard.value, 42);
+        assert_eq!(*guard.marker, ());
+    });
+}
+
+#[test]
+fn zst_field_into_inner() {
+    let state = WithZstLock::new(99, ());
+    let original = state.into_inner();
+    assert_eq!(original.value, 99);
+    assert_eq!(original.marker, ());
 }

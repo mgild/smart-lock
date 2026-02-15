@@ -11,15 +11,27 @@ pub struct WriteLocked;
 /// and the guard can be atomically upgraded to WriteLocked.
 pub struct UpgradeLocked;
 
+/// Runtime discriminant for [`LockMode`]. Used internally by [`FieldGuard`](crate::FieldGuard)
+/// to select the correct lock operation at acquire time.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LockModeKind {
+    /// No lock acquired.
     None,
+    /// Shared read lock.
     Read,
+    /// Exclusive write lock.
     Write,
+    /// Upgradable read lock.
     Upgrade,
 }
 
+/// Associates a lock-mode marker type ([`Unlocked`], [`ReadLocked`], [`WriteLocked`],
+/// [`UpgradeLocked`]) with its runtime [`LockModeKind`] discriminant.
+///
+/// This trait is sealed to the four built-in marker types and should not be
+/// implemented by downstream crates.
 pub trait LockMode {
+    /// The runtime discriminant for this lock mode.
     const MODE: LockModeKind;
 }
 
@@ -70,6 +82,7 @@ impl Writable for WriteLocked {}
 /// - `WriteLocked` → `WriteLocked` (preserve explicit write)
 /// - `UpgradeLocked` → `UpgradeLocked` (preserve explicit upgrade)
 pub trait DefaultRead {
+    /// The lock mode to use when `lock_rest_read()` fills this field.
     type Output: LockMode;
 }
 

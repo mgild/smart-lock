@@ -1,5 +1,5 @@
-use syn::{Attribute, Generics, Ident, Type, Visibility, ItemStruct, Fields};
 use quote::quote;
+use syn::{Attribute, Fields, Generics, Ident, ItemStruct, Type, Visibility};
 
 pub struct ParsedField {
     pub name: Ident,
@@ -21,20 +21,24 @@ impl ParsedStruct {
     /// Returns bare generic params (no bounds) for use in type applications.
     /// e.g. for `<T: Clone, U: Send>` returns tokens for `T, U`
     pub fn bare_generic_params(&self) -> Vec<proc_macro2::TokenStream> {
-        self.generics.params.iter().map(|p| match p {
-            syn::GenericParam::Type(tp) => {
-                let ident = &tp.ident;
-                quote!(#ident)
-            }
-            syn::GenericParam::Lifetime(lp) => {
-                let lt = &lp.lifetime;
-                quote!(#lt)
-            }
-            syn::GenericParam::Const(cp) => {
-                let ident = &cp.ident;
-                quote!(#ident)
-            }
-        }).collect()
+        self.generics
+            .params
+            .iter()
+            .map(|p| match p {
+                syn::GenericParam::Type(tp) => {
+                    let ident = &tp.ident;
+                    quote!(#ident)
+                }
+                syn::GenericParam::Lifetime(lp) => {
+                    let lt = &lp.lifetime;
+                    quote!(#lt)
+                }
+                syn::GenericParam::Const(cp) => {
+                    let ident = &cp.ident;
+                    quote!(#ident)
+                }
+            })
+            .collect()
     }
 
     /// Returns full generic params (with bounds) for use in impl parameter lists.
@@ -110,7 +114,9 @@ pub fn parse(attr: proc_macro2::TokenStream, item: &ItemStruct) -> syn::Result<P
         .iter()
         .map(|f| {
             let no_lock = f.attrs.iter().any(|a| a.path().is_ident("no_lock"));
-            let attrs: Vec<Attribute> = f.attrs.iter()
+            let attrs: Vec<Attribute> = f
+                .attrs
+                .iter()
                 .filter(|a| !a.path().is_ident("no_lock"))
                 .cloned()
                 .collect();

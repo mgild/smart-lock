@@ -1,3 +1,6 @@
+#![warn(missing_docs)]
+#![forbid(unsafe_code)]
+
 //! Per-field async `RwLock` with **compile-time access control** via proc macro.
 //!
 //! Annotate a struct with `#[smart_lock]` and get a type-safe builder that lets
@@ -131,10 +134,15 @@
 //! | `FooLockBuilder` | Type-state builder for selecting lock modes |
 //! | `FooLockGuard` | Guard with per-field access encoded in the type system |
 
+/// Per-field lock guard with type-level access modes.
 mod guard;
+/// Lock-mode marker types and traits.
 mod mode;
 
-pub use guard::FieldGuard;
-pub use mode::{DefaultRead, LockMode, LockModeKind, Readable, ReadLocked, Unlocked, UpgradeLocked, Writable, WriteLocked};
-pub use smart_lock_derive::smart_lock;
 pub use async_lock::{RwLock, RwLockReadGuard, RwLockUpgradableReadGuard, RwLockWriteGuard};
+pub use guard::FieldGuard;
+pub use mode::{
+    DefaultRead, LockMode, LockModeKind, ReadLocked, Readable, Unlocked, UpgradeLocked, Writable,
+    WriteLocked,
+};
+pub use smart_lock_derive::smart_lock;
