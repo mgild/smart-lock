@@ -2,7 +2,7 @@ use std::marker::PhantomData;
 use std::ops::{Deref, DerefMut};
 use async_lock::{RwLock, RwLockReadGuard, RwLockUpgradableReadGuard, RwLockWriteGuard};
 
-use crate::mode::{LockMode, LockModeKind, ReadLocked, UpgradeLocked, WriteLocked};
+use crate::mode::{LockMode, LockModeKind, Readable, ReadLocked, UpgradeLocked, Writable, WriteLocked};
 
 enum FieldGuardInner<'a, T> {
     Read(RwLockReadGuard<'a, T>),
@@ -39,6 +39,25 @@ impl<'a, T, M> FieldGuard<'a, T, M> {
             inner,
             _mode: PhantomData,
         }
+    }
+
+    /// Try to acquire the appropriate lock without blocking.
+    /// Returns `None` if the lock is held. Unlocked fields always succeed.
+    #[inline(always)]
+    pub fn try_acquire(lock: &'a RwLock<T>) -> Option<Self>
+    where
+        M: LockMode,
+    {
+        let inner = match M::MODE {
+            LockModeKind::Write => FieldGuardInner::Write(lock.try_write()?),
+            LockModeKind::Read => FieldGuardInner::Read(lock.try_read()?),
+            LockModeKind::Upgrade => FieldGuardInner::Upgrade(lock.try_upgradable_read()?),
+            LockModeKind::None => FieldGuardInner::None,
+        };
+        Some(Self {
+            inner,
+            _mode: PhantomData,
+        })
     }
 
     /// Create a no-op guard for unlocked fields. Zero-cost: no lock acquired.
@@ -93,44 +112,24 @@ impl<'a, T> FieldGuard<'a, T, UpgradeLocked> {
     }
 }
 
-// --- Deref impls ---
+// --- Deref: any Readable mode (ReadLocked, WriteLocked, UpgradeLocked) ---
 
-impl<T> Deref for FieldGuard<'_, T, ReadLocked> {
+impl<T, M: Readable> Deref for FieldGuard<'_, T, M> {
     type Target = T;
     #[inline(always)]
     fn deref(&self) -> &T {
         match &self.inner {
             FieldGuardInner::Read(g) => g,
-            _ => unreachable!(),
-        }
-    }
-}
-
-impl<T> Deref for FieldGuard<'_, T, WriteLocked> {
-    type Target = T;
-    #[inline(always)]
-    fn deref(&self) -> &T {
-        match &self.inner {
             FieldGuardInner::Write(g) => g,
-            _ => unreachable!(),
-        }
-    }
-}
-
-impl<T> Deref for FieldGuard<'_, T, UpgradeLocked> {
-    type Target = T;
-    #[inline(always)]
-    fn deref(&self) -> &T {
-        match &self.inner {
             FieldGuardInner::Upgrade(g) => g,
-            _ => unreachable!(),
+            FieldGuardInner::None => unreachable!(),
         }
     }
 }
 
 // --- DerefMut: WriteLocked only ---
 
-impl<T> DerefMut for FieldGuard<'_, T, WriteLocked> {
+impl<T, M: Writable + Readable> DerefMut for FieldGuard<'_, T, M> {
     #[inline(always)]
     fn deref_mut(&mut self) -> &mut T {
         match &mut self.inner {

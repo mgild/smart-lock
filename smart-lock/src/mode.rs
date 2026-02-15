@@ -38,3 +38,27 @@ impl LockMode for WriteLocked {
 impl LockMode for UpgradeLocked {
     const MODE: LockModeKind = LockModeKind::Upgrade;
 }
+
+/// Implemented for lock modes that support reading (`ReadLocked`, `WriteLocked`, `UpgradeLocked`).
+///
+/// Not implemented for `Unlocked` — accessing an unlocked field is a compile error.
+#[diagnostic::on_unimplemented(
+    message = "cannot read from a field with `{Self}` access",
+    note = "add `.read_field()` or `.write_field()` to the builder to lock this field"
+)]
+pub trait Readable {}
+
+impl Readable for ReadLocked {}
+impl Readable for WriteLocked {}
+impl Readable for UpgradeLocked {}
+
+/// Implemented only for `WriteLocked`.
+///
+/// Not implemented for `ReadLocked` or `UpgradeLocked` — mutating a read-locked field is a compile error.
+#[diagnostic::on_unimplemented(
+    message = "cannot write to a field with `{Self}` access",
+    note = "use `.write_field()` instead of `.read_field()` to get mutable access"
+)]
+pub trait Writable {}
+
+impl Writable for WriteLocked {}

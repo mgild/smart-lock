@@ -128,6 +128,24 @@ pub fn generate(parsed: &ParsedStruct) -> proc_macro2::TokenStream {
         })
         .collect();
 
+    let try_lock_fields: Vec<proc_macro2::TokenStream> = parsed
+        .fields
+        .iter()
+        .enumerate()
+        .map(|(i, field)| {
+            let name = &field.name;
+            let ty = &field.ty;
+            let f = &generic_names[i];
+            quote! {
+                let #name = if <#f as smart_lock::LockMode>::MODE == smart_lock::LockModeKind::None {
+                    smart_lock::FieldGuard::<'_, #ty, #f>::unlocked()
+                } else {
+                    smart_lock::FieldGuard::<'_, #ty, #f>::try_acquire(&self.lock.#name)?
+                };
+            }
+        })
+        .collect();
+
     let field_names: Vec<&syn::Ident> = parsed.fields.iter().map(|f| &f.name).collect();
 
     let lock_impl = quote! {
@@ -139,6 +157,16 @@ pub fn generate(parsed: &ParsedStruct) -> proc_macro2::TokenStream {
             #vis async fn lock(self) -> #guard_name<'a, #bare_prefix #(#generic_names),*> {
                 #(#lock_fields)*
                 #guard_name { lock: self.lock, #(#field_names),* }
+            }
+
+            /// Try to acquire all requested locks without blocking.
+            ///
+            /// Returns `None` if any lock is currently held in a conflicting mode.
+            /// On failure, all already-acquired locks are released (the partially-built
+            /// guard is dropped). Locks are attempted in field declaration order.
+            #vis fn try_lock(self) -> Option<#guard_name<'a, #bare_prefix #(#generic_names),*>> {
+                #(#try_lock_fields)*
+                Some(#guard_name { lock: self.lock, #(#field_names),* })
             }
         }
     };

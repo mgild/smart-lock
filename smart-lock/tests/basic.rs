@@ -400,3 +400,77 @@ async fn doc_struct_compiles_with_attrs() {
     assert_eq!(*guard.x, 1);
     assert_eq!(*guard.y, 2);
 }
+
+// --- try_lock ---
+
+#[tokio::test]
+async fn try_lock_succeeds_when_unlocked() {
+    let state = MyStateLock::new(42, "hello".into(), vec![1]);
+
+    let guard = state.builder().write_counter().read_name().try_lock();
+    assert!(guard.is_some());
+    let guard = guard.unwrap();
+    assert_eq!(*guard.counter, 42);
+    assert_eq!(*guard.name, "hello");
+}
+
+#[tokio::test]
+async fn try_lock_fails_when_write_held() {
+    let state = MyStateLock::new(0, "".into(), vec![]);
+
+    // Hold a write lock on counter
+    let _hold = state.write_counter().await;
+
+    // try_lock requesting write on counter should fail
+    let guard = state.builder().write_counter().try_lock();
+    assert!(guard.is_none());
+}
+
+#[tokio::test]
+async fn try_lock_fails_when_read_blocked_by_write() {
+    let state = MyStateLock::new(0, "".into(), vec![]);
+
+    let _hold = state.write_counter().await;
+
+    // try_lock requesting read on counter should also fail (writer holds it)
+    let guard = state.builder().read_counter().try_lock();
+    assert!(guard.is_none());
+}
+
+#[tokio::test]
+async fn try_lock_succeeds_on_different_fields() {
+    let state = MyStateLock::new(0, "held".into(), vec![]);
+
+    // Hold write on name
+    let _hold = state.write_name().await;
+
+    // try_lock on counter should succeed (different field)
+    let guard = state.builder().write_counter().try_lock();
+    assert!(guard.is_some());
+}
+
+#[tokio::test]
+async fn try_lock_releases_on_partial_failure() {
+    let state = MyStateLock::new(0, "".into(), vec![]);
+
+    // Hold write on name (field index 1)
+    let _hold = state.write_name().await;
+
+    // try_lock requesting counter (succeeds) then name (fails)
+    // counter lock should be released on failure
+    let guard = state.builder().write_counter().write_name().try_lock();
+    assert!(guard.is_none());
+
+    // Verify counter is NOT still locked (the partial acquisition was dropped)
+    let counter = state.try_write_counter();
+    assert!(counter.is_some());
+}
+
+#[tokio::test]
+async fn try_lock_all_unlocked_fields_returns_some() {
+    let state = MyStateLock::new(10, "test".into(), vec![]);
+
+    // try_lock with no fields requested should succeed
+    let guard = state.builder().try_lock();
+    assert!(guard.is_some());
+}

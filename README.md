@@ -82,7 +82,20 @@ if let Some(x) = state.try_read_x() {
 }
 ```
 
-### 3. Lock all fields at once
+### 3. Non-blocking multi-field lock
+
+Try to acquire all requested locks without blocking. Returns `None` if any lock is held:
+
+```rust
+if let Some(mut guard) = state.builder().write_x().read_y().try_lock() {
+    *guard.x += 1;
+    println!("{}", guard.y);
+}
+```
+
+On failure, any partially-acquired locks are automatically released.
+
+### 4. Lock all fields at once
 
 ```rust
 let guard = state.lock_all().await;       // read all
