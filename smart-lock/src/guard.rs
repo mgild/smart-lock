@@ -218,3 +218,53 @@ impl<T, M: Readable> AsRef<T> for FieldGuard<'_, T, M> {
         self
     }
 }
+
+// --- PartialEq: forwards to T ---
+
+impl<T: PartialEq, M: Readable> PartialEq for FieldGuard<'_, T, M> {
+    #[inline(always)]
+    fn eq(&self, other: &Self) -> bool {
+        **self == **other
+    }
+}
+
+impl<T: PartialEq, M: Readable> PartialEq<T> for FieldGuard<'_, T, M> {
+    #[inline(always)]
+    fn eq(&self, other: &T) -> bool {
+        **self == *other
+    }
+}
+
+impl<T: Eq, M: Readable> Eq for FieldGuard<'_, T, M> {}
+
+// --- PartialOrd / Ord: forwards to T ---
+
+impl<T: PartialOrd, M: Readable> PartialOrd for FieldGuard<'_, T, M> {
+    #[inline(always)]
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        (**self).partial_cmp(&**other)
+    }
+}
+
+impl<T: PartialOrd, M: Readable> PartialOrd<T> for FieldGuard<'_, T, M> {
+    #[inline(always)]
+    fn partial_cmp(&self, other: &T) -> Option<std::cmp::Ordering> {
+        (**self).partial_cmp(other)
+    }
+}
+
+impl<T: Ord, M: Readable> Ord for FieldGuard<'_, T, M> {
+    #[inline(always)]
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        (**self).cmp(&**other)
+    }
+}
+
+// --- Hash: forwards to T ---
+
+impl<T: std::hash::Hash, M: Readable> std::hash::Hash for FieldGuard<'_, T, M> {
+    #[inline(always)]
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        (**self).hash(state)
+    }
+}

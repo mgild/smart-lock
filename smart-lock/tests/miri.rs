@@ -395,6 +395,27 @@ fn guard_try_upgrade_fails_returns_original() {
     });
 }
 
+// --- PartialEq / Ord ---
+
+#[test]
+fn partial_eq_with_value() {
+    block_on(async {
+        let state = MyStateLock::new(42, "hello".into(), vec![]);
+        let guard = state.builder().read_counter().read_name().lock().await;
+        assert!(guard.counter == 42);
+        assert!(*guard.name == "hello");
+    });
+}
+
+#[test]
+fn ord_on_field_guard() {
+    block_on(async {
+        let state = MyStateLock::new(10, String::new(), vec![]);
+        let guard = state.builder().read_counter().lock().await;
+        assert!(guard.counter < 20);
+    });
+}
+
 // --- Display ---
 
 #[test]

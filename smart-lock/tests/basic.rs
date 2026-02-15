@@ -861,6 +861,44 @@ async fn display_impl_on_field_guard() {
     assert_eq!(format!("{}", guard.name), "hello");
 }
 
+// --- PartialEq / Ord / Hash ---
+
+#[tokio::test]
+async fn partial_eq_between_guards() {
+    let s1 = MyStateLock::new(42, "hello".into(), vec![]);
+    let s2 = MyStateLock::new(42, "hello".into(), vec![]);
+    let g1 = s1.builder().read_counter().lock().await;
+    let g2 = s2.builder().read_counter().lock().await;
+    assert_eq!(g1.counter, g2.counter);
+}
+
+#[tokio::test]
+async fn partial_eq_with_value() {
+    let state = MyStateLock::new(42, "hello".into(), vec![]);
+    let guard = state.builder().read_counter().read_name().lock().await;
+    assert!(guard.counter == 42);
+    assert!(*guard.name == "hello");
+}
+
+#[tokio::test]
+async fn ord_on_field_guard() {
+    let state = MyStateLock::new(10, "".into(), vec![]);
+    let guard = state.builder().read_counter().lock().await;
+    assert!(guard.counter < 20);
+    assert!(guard.counter > 5);
+}
+
+#[tokio::test]
+async fn hash_on_field_guard() {
+    use std::collections::HashSet;
+    let state = MyStateLock::new(42, "hello".into(), vec![]);
+    let guard = state.builder().read_counter().lock().await;
+
+    let mut set = HashSet::new();
+    set.insert(42u32);
+    assert!(set.contains(&*guard.counter));
+}
+
 // --- AsRef impl ---
 
 #[tokio::test]
