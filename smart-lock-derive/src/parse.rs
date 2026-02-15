@@ -41,8 +41,41 @@ impl ParsedStruct {
         self.generics.params.iter().map(|p| quote!(#p)).collect()
     }
 
-    pub fn has_generics(&self) -> bool {
-        !self.generics.params.is_empty()
+    /// Bare struct generic params with trailing comma, or empty.
+    /// Use in type applications: `<'a, #bare_prefix #(#field_generics),*>`
+    pub fn bare_prefix(&self) -> proc_macro2::TokenStream {
+        let bare = self.bare_generic_params();
+        if bare.is_empty() {
+            quote!()
+        } else {
+            quote!(#(#bare),*,)
+        }
+    }
+
+    /// Full struct generic params (with bounds) with trailing comma, or empty.
+    /// Use in impl headers: `impl<'a, #impl_prefix #(#field_generics),*>`
+    pub fn impl_prefix(&self) -> proc_macro2::TokenStream {
+        let params = self.impl_generic_params();
+        if params.is_empty() {
+            quote!()
+        } else {
+            quote!(#(#params),*,)
+        }
+    }
+
+    /// The where clause (if any) from the original struct.
+    pub fn where_clause(&self) -> Option<&syn::WhereClause> {
+        self.generics.where_clause.as_ref()
+    }
+
+    /// Type-application generics for the Lock struct: `<T, U>` or empty.
+    pub fn ty_generics(&self) -> proc_macro2::TokenStream {
+        let bare = self.bare_generic_params();
+        if bare.is_empty() {
+            quote!()
+        } else {
+            quote!(<#(#bare),*>)
+        }
     }
 }
 

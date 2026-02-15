@@ -7,10 +7,10 @@ pub fn generate(parsed: &ParsedStruct) -> proc_macro2::TokenStream {
     let builder_name = format_ident!("{}LockBuilder", &parsed.name);
     let guard_name = format_ident!("{}LockGuard", &parsed.name);
 
-    let (_, ty_generics, where_clause) = parsed.generics.split_for_impl();
-    let impl_params = parsed.impl_generic_params();
-    let bare = parsed.bare_generic_params();
-    let has_generics = parsed.has_generics();
+    let impl_prefix = parsed.impl_prefix();
+    let bare_prefix = parsed.bare_prefix();
+    let ty_generics = parsed.ty_generics();
+    let where_clause = parsed.where_clause();
 
     let struct_name_str = parsed.name.to_string();
     let builder_doc = format!(
@@ -30,21 +30,12 @@ pub fn generate(parsed: &ParsedStruct) -> proc_macro2::TokenStream {
         .collect();
 
     // --- Builder struct definition ---
-    let struct_def = if has_generics {
-        quote! {
-            #[doc = #builder_doc]
-            #vis struct #builder_name<'a, #(#impl_params),*, #(#generic_names),*> #where_clause {
-                lock: &'a #lock_name #ty_generics,
-                _marker: std::marker::PhantomData<(#(#generic_names),*)>,
-            }
-        }
-    } else {
-        quote! {
-            #[doc = #builder_doc]
-            #vis struct #builder_name<'a, #(#generic_names),*> {
-                lock: &'a #lock_name,
-                _marker: std::marker::PhantomData<(#(#generic_names),*)>,
-            }
+    let struct_def = quote! {
+        #[doc = #builder_doc]
+        #[must_use = "builder does nothing until .lock().await is called"]
+        #vis struct #builder_name<'a, #impl_prefix #(#generic_names),*> #where_clause {
+            lock: &'a #lock_name #ty_generics,
+            _marker: std::marker::PhantomData<(#(#generic_names),*)>,
         }
     };
 
@@ -93,45 +84,24 @@ pub fn generate(parsed: &ParsedStruct) -> proc_macro2::TokenStream {
             })
             .collect();
 
-        if has_generics {
-            field_impls.push(quote! {
-                impl<'a, #(#impl_params),*, #(#free_generics),*> #builder_name<'a, #(#bare),*, #(#input_params),*> #where_clause {
-                    #[doc = #write_doc]
-                    #vis fn #write_method(self) -> #builder_name<'a, #(#bare),*, #(#write_params),*> {
-                        #builder_name { lock: self.lock, _marker: std::marker::PhantomData }
-                    }
-
-                    #[doc = #read_doc]
-                    #vis fn #read_method(self) -> #builder_name<'a, #(#bare),*, #(#read_params),*> {
-                        #builder_name { lock: self.lock, _marker: std::marker::PhantomData }
-                    }
-
-                    #[doc = #upgrade_doc]
-                    #vis fn #upgrade_method(self) -> #builder_name<'a, #(#bare),*, #(#upgrade_params),*> {
-                        #builder_name { lock: self.lock, _marker: std::marker::PhantomData }
-                    }
+        field_impls.push(quote! {
+            impl<'a, #impl_prefix #(#free_generics),*> #builder_name<'a, #bare_prefix #(#input_params),*> #where_clause {
+                #[doc = #write_doc]
+                #vis fn #write_method(self) -> #builder_name<'a, #bare_prefix #(#write_params),*> {
+                    #builder_name { lock: self.lock, _marker: std::marker::PhantomData }
                 }
-            });
-        } else {
-            field_impls.push(quote! {
-                impl<'a, #(#free_generics),*> #builder_name<'a, #(#input_params),*> {
-                    #[doc = #write_doc]
-                    #vis fn #write_method(self) -> #builder_name<'a, #(#write_params),*> {
-                        #builder_name { lock: self.lock, _marker: std::marker::PhantomData }
-                    }
 
-                    #[doc = #read_doc]
-                    #vis fn #read_method(self) -> #builder_name<'a, #(#read_params),*> {
-                        #builder_name { lock: self.lock, _marker: std::marker::PhantomData }
-                    }
-
-                    #[doc = #upgrade_doc]
-                    #vis fn #upgrade_method(self) -> #builder_name<'a, #(#upgrade_params),*> {
-                        #builder_name { lock: self.lock, _marker: std::marker::PhantomData }
-                    }
+                #[doc = #read_doc]
+                #vis fn #read_method(self) -> #builder_name<'a, #bare_prefix #(#read_params),*> {
+                    #builder_name { lock: self.lock, _marker: std::marker::PhantomData }
                 }
-            });
-        }
+
+                #[doc = #upgrade_doc]
+                #vis fn #upgrade_method(self) -> #builder_name<'a, #bare_prefix #(#upgrade_params),*> {
+                    #builder_name { lock: self.lock, _marker: std::marker::PhantomData }
+                }
+            }
+        });
     }
 
     // --- lock() method ---
@@ -160,30 +130,15 @@ pub fn generate(parsed: &ParsedStruct) -> proc_macro2::TokenStream {
 
     let field_names: Vec<&syn::Ident> = parsed.fields.iter().map(|f| &f.name).collect();
 
-    let lock_impl = if has_generics {
-        quote! {
-            impl<'a, #(#impl_params),*, #(#lock_bounds),*> #builder_name<'a, #(#bare),*, #(#generic_names),*> #where_clause {
-                /// Acquire all requested locks and return the guard.
-                ///
-                /// Locks are acquired in field declaration order (not call order) to prevent deadlocks.
-                /// Unlocked fields are skipped with zero overhead.
-                #vis async fn lock(self) -> #guard_name<'a, #(#bare),*, #(#generic_names),*> {
-                    #(#lock_fields)*
-                    #guard_name { lock: self.lock, #(#field_names),* }
-                }
-            }
-        }
-    } else {
-        quote! {
-            impl<'a, #(#lock_bounds),*> #builder_name<'a, #(#generic_names),*> {
-                /// Acquire all requested locks and return the guard.
-                ///
-                /// Locks are acquired in field declaration order (not call order) to prevent deadlocks.
-                /// Unlocked fields are skipped with zero overhead.
-                #vis async fn lock(self) -> #guard_name<'a, #(#generic_names),*> {
-                    #(#lock_fields)*
-                    #guard_name { lock: self.lock, #(#field_names),* }
-                }
+    let lock_impl = quote! {
+        impl<'a, #impl_prefix #(#lock_bounds),*> #builder_name<'a, #bare_prefix #(#generic_names),*> #where_clause {
+            /// Acquire all requested locks and return the guard.
+            ///
+            /// Locks are acquired in field declaration order (not call order) to prevent deadlocks.
+            /// Unlocked fields are skipped with zero overhead.
+            #vis async fn lock(self) -> #guard_name<'a, #bare_prefix #(#generic_names),*> {
+                #(#lock_fields)*
+                #guard_name { lock: self.lock, #(#field_names),* }
             }
         }
     };

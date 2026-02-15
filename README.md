@@ -235,21 +235,21 @@ let state: MyStateLock = original.into();
 
 ## Benchmarks
 
-Three scenarios comparing: single `RwLock<Struct>`, manual per-field `RwLock`, and smart-lock. 4 fields, 8 tasks, 1000 ops each.
+Three scenarios comparing: single `RwLock<Struct>`, manual per-field `RwLock`, and smart-lock. All use `async_lock::RwLock` for a fair comparison. 4 fields, 8 tasks, 1000 ops each.
 
 | Scenario | Single `RwLock<S>` | Manual per-field | smart-lock |
 |----------|-------------------|-----------------|------------|
-| write_contention (4 writers, different fields) | 239 us | 67 us | 110 us |
-| read_heavy (8 tasks, 90% read) | 436 us | 585 us | 840 us |
-| mixed_access (writers A, readers B) | 555 us | 387 us | 546 us |
+| write_contention (4 writers, different fields) | 217 us | 205 us | 219 us |
+| read_heavy (8 tasks, 90% read) | 204 us | 327 us | 374 us |
+| mixed_access (writers A, readers B) | 468 us | 322 us | 380 us |
 
 **Takeaways:**
 
-- **Write contention**: smart-lock is **2.2x faster** than single RwLock when writers target different fields. The gap vs manual (67 us) is the cost of the FieldGuard abstraction, which buys you compile-time safety and deadlock prevention.
+- **Write contention**: All three are comparable (~210-220 us). With `async_lock`'s lightweight RwLock, the single-lock approach doesn't serialize as badly as with tokio's heavier lock. smart-lock matches manual per-field performance.
 
-- **Read heavy**: Single RwLock wins because it's one lock vs N. When most operations are reads and you need multiple fields, coarse-grained locking has less overhead.
+- **Read heavy**: Single RwLock wins because it's one lock acquisition vs N. When most operations are reads across multiple fields, coarse-grained locking has less overhead.
 
-- **Mixed access**: Smart-lock approaches manual performance while providing compile-time guarantees.
+- **Mixed access**: smart-lock is **1.2x faster** than single RwLock (380 us vs 468 us) when writers on field A don't need to block readers on field B. The ~18% gap vs manual (322 us) is the cost of the FieldGuard abstraction.
 
 Run benchmarks yourself:
 

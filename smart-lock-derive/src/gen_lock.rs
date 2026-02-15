@@ -8,9 +8,10 @@ pub fn generate(parsed: &ParsedStruct) -> proc_macro2::TokenStream {
     let builder_name = format_ident!("{}LockBuilder", struct_name);
     let guard_name = format_ident!("{}LockGuard", struct_name);
 
-    let (impl_generics, ty_generics, where_clause) = parsed.generics.split_for_impl();
-    let bare = parsed.bare_generic_params();
-    let has_generics = parsed.has_generics();
+    let impl_prefix = parsed.impl_prefix();
+    let bare_prefix = parsed.bare_prefix();
+    let ty_generics = parsed.ty_generics();
+    let where_clause = parsed.where_clause();
 
     let struct_name_str = struct_name.to_string();
     let lock_doc = format!(
@@ -181,31 +182,26 @@ pub fn generate(parsed: &ParsedStruct) -> proc_macro2::TokenStream {
         })
         .collect();
 
-    let builder_ty = if has_generics {
-        quote!(#builder_name<'_, #(#bare),*, #(#all_unlocked),*>)
-    } else {
-        quote!(#builder_name<'_, #(#all_unlocked),*>)
-    };
-
-    let guard_all_read_ty = if has_generics {
-        quote!(#guard_name<'_, #(#bare),*, #(#all_read),*>)
-    } else {
-        quote!(#guard_name<'_, #(#all_read),*>)
-    };
-
-    let guard_all_write_ty = if has_generics {
-        quote!(#guard_name<'_, #(#bare),*, #(#all_write),*>)
-    } else {
-        quote!(#guard_name<'_, #(#all_write),*>)
-    };
+    // Static assertion that the Lock type is Send + Sync.
+    // Uses a hidden const fn that requires Send + Sync bounds.
+    let assert_name = format_ident!("_assert_{}_send_sync", lock_name);
 
     quote! {
         #[doc = #lock_doc]
-        #vis struct #lock_name #impl_generics #where_clause {
+        #vis struct #lock_name #ty_generics #where_clause {
             #(#lock_fields)*
         }
 
-        impl #impl_generics #lock_name #ty_generics #where_clause {
+        #[doc(hidden)]
+        #[allow(non_snake_case)]
+        const _: () = {
+            fn #assert_name<#impl_prefix>() #where_clause {
+                fn _require_send_sync<T: Send + Sync>() {}
+                _require_send_sync::<#lock_name #ty_generics>();
+            }
+        };
+
+        impl<#impl_prefix> #lock_name #ty_generics #where_clause {
             /// Create a new lock wrapping each field in an `RwLock`.
             #vis fn new(#(#new_params),*) -> Self {
                 Self {
@@ -217,18 +213,18 @@ pub fn generate(parsed: &ParsedStruct) -> proc_macro2::TokenStream {
             /// or `.upgrade_field()` calls, then `.lock().await` to acquire.
             ///
             /// Locks are acquired in field declaration order to prevent deadlocks.
-            #vis fn builder(&self) -> #builder_ty {
+            #vis fn builder(&self) -> #builder_name<'_, #bare_prefix #(#all_unlocked),*> {
                 #builder_name { lock: self, _marker: std::marker::PhantomData }
             }
 
             /// Read-lock all fields. Convenience for `builder().read_a().read_b()...lock().await`.
-            #vis async fn lock_all(&self) -> #guard_all_read_ty {
+            #vis async fn lock_all(&self) -> #guard_name<'_, #bare_prefix #(#all_read),*> {
                 #(#lock_all_fields)*
                 #guard_name { lock: self, #(#field_names),* }
             }
 
             /// Write-lock all fields. Convenience for `builder().write_a().write_b()...lock().await`.
-            #vis async fn lock_all_mut(&self) -> #guard_all_write_ty {
+            #vis async fn lock_all_mut(&self) -> #guard_name<'_, #bare_prefix #(#all_write),*> {
                 #(#lock_all_mut_fields)*
                 #guard_name { lock: self, #(#field_names),* }
             }

@@ -2,7 +2,7 @@ use criterion::{criterion_group, criterion_main, Criterion};
 use smart_lock::smart_lock;
 use std::sync::Arc;
 use tokio::runtime::Runtime;
-use tokio::sync::RwLock;
+use async_lock::RwLock;
 
 // === Shared state for all approaches ===
 
