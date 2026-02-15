@@ -474,3 +474,44 @@ async fn try_lock_all_unlocked_fields_returns_some() {
     let guard = state.builder().try_lock();
     assert!(guard.is_some());
 }
+
+// --- try_lock_all / try_lock_all_mut ---
+
+#[tokio::test]
+async fn try_lock_all_succeeds() {
+    let state = MyStateLock::new(42, "hello".into(), vec![1]);
+
+    let guard = state.try_lock_all();
+    assert!(guard.is_some());
+    let guard = guard.unwrap();
+    assert_eq!(*guard.counter, 42);
+    assert_eq!(*guard.name, "hello");
+    assert_eq!(*guard.data, vec![1]);
+}
+
+#[tokio::test]
+async fn try_lock_all_fails_when_write_held() {
+    let state = MyStateLock::new(0, "".into(), vec![]);
+
+    let _hold = state.write_counter().await;
+    assert!(state.try_lock_all().is_none());
+}
+
+#[tokio::test]
+async fn try_lock_all_mut_succeeds() {
+    let state = MyStateLock::new(0, "".into(), vec![]);
+
+    let guard = state.try_lock_all_mut();
+    assert!(guard.is_some());
+    let mut guard = guard.unwrap();
+    *guard.counter = 99;
+    assert_eq!(*guard.counter, 99);
+}
+
+#[tokio::test]
+async fn try_lock_all_mut_fails_when_read_held() {
+    let state = MyStateLock::new(0, "".into(), vec![]);
+
+    let _hold = state.read_counter().await;
+    assert!(state.try_lock_all_mut().is_none());
+}

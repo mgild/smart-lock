@@ -94,6 +94,30 @@ pub fn generate(parsed: &ParsedStruct) -> proc_macro2::TokenStream {
         })
         .collect();
 
+    let try_lock_all_fields: Vec<proc_macro2::TokenStream> = parsed
+        .fields
+        .iter()
+        .map(|field| {
+            let name = &field.name;
+            let ty = &field.ty;
+            quote! {
+                let #name = smart_lock::FieldGuard::<'_, #ty, smart_lock::ReadLocked>::try_acquire(&self.#name)?;
+            }
+        })
+        .collect();
+
+    let try_lock_all_mut_fields: Vec<proc_macro2::TokenStream> = parsed
+        .fields
+        .iter()
+        .map(|field| {
+            let name = &field.name;
+            let ty = &field.ty;
+            quote! {
+                let #name = smart_lock::FieldGuard::<'_, #ty, smart_lock::WriteLocked>::try_acquire(&self.#name)?;
+            }
+        })
+        .collect();
+
     let field_names: Vec<&syn::Ident> = parsed.fields.iter().map(|f| &f.name).collect();
 
     let per_field_accessors: Vec<proc_macro2::TokenStream> = parsed
@@ -231,6 +255,20 @@ pub fn generate(parsed: &ParsedStruct) -> proc_macro2::TokenStream {
             #vis async fn lock_all_mut(&self) -> #guard_name<'_, #bare_prefix #(#all_write),*> {
                 #(#lock_all_mut_fields)*
                 #guard_name { lock: self, #(#field_names),* }
+            }
+
+            /// Try to read-lock all fields without blocking.
+            /// Returns `None` if any field is currently write-locked.
+            #vis fn try_lock_all(&self) -> Option<#guard_name<'_, #bare_prefix #(#all_read),*>> {
+                #(#try_lock_all_fields)*
+                Some(#guard_name { lock: self, #(#field_names),* })
+            }
+
+            /// Try to write-lock all fields without blocking.
+            /// Returns `None` if any field is currently locked.
+            #vis fn try_lock_all_mut(&self) -> Option<#guard_name<'_, #bare_prefix #(#all_write),*>> {
+                #(#try_lock_all_mut_fields)*
+                Some(#guard_name { lock: self, #(#field_names),* })
             }
 
             #[doc = #into_inner_doc]

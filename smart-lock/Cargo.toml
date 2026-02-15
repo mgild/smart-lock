@@ -2,6 +2,11 @@
 name = "smart-lock"
 version = "0.1.0"
 edition = "2021"
+license = "MIT OR Apache-2.0"
+description = "Per-field async RwLock with compile-time access control via proc macro"
+repository = "https://github.com/mgild/smart-lock"
+keywords = ["async", "lock", "rwlock", "concurrency", "proc-macro"]
+categories = ["concurrency", "asynchronous"]
 
 [dependencies]
 smart-lock-derive = { path = "../smart-lock-derive" }
