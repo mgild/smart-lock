@@ -12,6 +12,18 @@ pub fn generate(parsed: &ParsedStruct) -> proc_macro2::TokenStream {
     let bare = parsed.bare_generic_params();
     let has_generics = parsed.has_generics();
 
+    let struct_name_str = parsed.name.to_string();
+    let guard_doc = format!(
+        "Guard holding acquired locks for [`{lock}`].\n\n\
+         Access fields via `guard.field_name` — uses `Deref`/`DerefMut` based on the lock mode:\n\
+         - **`WriteLocked`**: `*guard.field` for read, `*guard.field = val` for write\n\
+         - **`ReadLocked`**: `*guard.field` for read only (mutation is a compile error)\n\
+         - **`UpgradeLocked`**: `*guard.field` for read, `.upgrade_field().await` to promote to write\n\
+         - **`Unlocked`**: compile error on any access\n\n\
+         All locks are released when the guard is dropped.",
+        lock = format!("{}Lock", struct_name_str)
+    );
+
     let n = parsed.fields.len();
     let generic_names: Vec<syn::Ident> = (0..n)
         .map(|i| format_ident!("F{}", i))
@@ -40,8 +52,25 @@ pub fn generate(parsed: &ParsedStruct) -> proc_macro2::TokenStream {
 
     for (i, field) in parsed.fields.iter().enumerate() {
         let field_name = &field.name;
+        let field_name_str = field_name.to_string();
         let upgrade_method = format_ident!("upgrade_{}", field_name);
         let downgrade_method = format_ident!("downgrade_{}", field_name);
+
+        let upgrade_doc = format!(
+            "Atomically upgrade `{}` from upgradable read to exclusive write.\n\n\
+             Waits for all other readers to drain. Other fields remain locked as before.",
+            field_name_str
+        );
+        let downgrade_from_upgrade_doc = format!(
+            "Atomically downgrade `{}` from upgradable read to shared read.\n\n\
+             Releases the upgrade slot, allowing other tasks to acquire upgradable locks. Synchronous (no `.await`).",
+            field_name_str
+        );
+        let downgrade_from_write_doc = format!(
+            "Atomically downgrade `{}` from exclusive write to shared read.\n\n\
+             Immediately allows other readers. Synchronous (no `.await`).",
+            field_name_str
+        );
 
         let free_generics: Vec<&syn::Ident> = generic_names
             .iter()
@@ -74,6 +103,7 @@ pub fn generate(parsed: &ParsedStruct) -> proc_macro2::TokenStream {
         if has_generics {
             transition_impls.push(quote! {
                 impl<'a, #(#impl_params),*, #(#free_generics),*> #guard_name<'a, #(#bare),*, #(#upgrade_input),*> #where_clause {
+                    #[doc = #upgrade_doc]
                     #vis async fn #upgrade_method(self) -> #guard_name<'a, #(#bare),*, #(#write_output),*> {
                         #guard_name {
                             lock: self.lock,
@@ -82,6 +112,7 @@ pub fn generate(parsed: &ParsedStruct) -> proc_macro2::TokenStream {
                         }
                     }
 
+                    #[doc = #downgrade_from_upgrade_doc]
                     #vis fn #downgrade_method(self) -> #guard_name<'a, #(#bare),*, #(#read_output),*> {
                         #guard_name {
                             lock: self.lock,
@@ -94,6 +125,7 @@ pub fn generate(parsed: &ParsedStruct) -> proc_macro2::TokenStream {
 
             transition_impls.push(quote! {
                 impl<'a, #(#impl_params),*, #(#free_generics),*> #guard_name<'a, #(#bare),*, #(#write_input),*> #where_clause {
+                    #[doc = #downgrade_from_write_doc]
                     #vis fn #downgrade_method(self) -> #guard_name<'a, #(#bare),*, #(#read_output),*> {
                         #guard_name {
                             lock: self.lock,
@@ -106,6 +138,7 @@ pub fn generate(parsed: &ParsedStruct) -> proc_macro2::TokenStream {
         } else {
             transition_impls.push(quote! {
                 impl<'a, #(#free_generics),*> #guard_name<'a, #(#upgrade_input),*> {
+                    #[doc = #upgrade_doc]
                     #vis async fn #upgrade_method(self) -> #guard_name<'a, #(#write_output),*> {
                         #guard_name {
                             lock: self.lock,
@@ -114,6 +147,7 @@ pub fn generate(parsed: &ParsedStruct) -> proc_macro2::TokenStream {
                         }
                     }
 
+                    #[doc = #downgrade_from_upgrade_doc]
                     #vis fn #downgrade_method(self) -> #guard_name<'a, #(#read_output),*> {
                         #guard_name {
                             lock: self.lock,
@@ -126,6 +160,7 @@ pub fn generate(parsed: &ParsedStruct) -> proc_macro2::TokenStream {
 
             transition_impls.push(quote! {
                 impl<'a, #(#free_generics),*> #guard_name<'a, #(#write_input),*> {
+                    #[doc = #downgrade_from_write_doc]
                     #vis fn #downgrade_method(self) -> #guard_name<'a, #(#read_output),*> {
                         #guard_name {
                             lock: self.lock,
@@ -153,6 +188,14 @@ pub fn generate(parsed: &ParsedStruct) -> proc_macro2::TokenStream {
     let relock_impl = if has_generics {
         quote! {
             impl<'a, #(#impl_params),*, #(#lock_bounds),*> #guard_name<'a, #(#bare),*, #(#generic_names),*> #where_clause {
+                /// Drop all held locks and return a fresh builder for the same lock.
+                ///
+                /// This lets you re-acquire a different set of fields without dropping
+                /// the lock reference.
+                ///
+                /// **Warning:** There is a moment between dropping the old locks and
+                /// acquiring new ones where no locks are held. Other tasks may modify
+                /// fields during this gap. Do not assume atomicity across a `relock()`.
                 #vis fn relock(self) -> #relock_builder_ty {
                     let lock = self.lock;
                     drop(self);
@@ -163,6 +206,14 @@ pub fn generate(parsed: &ParsedStruct) -> proc_macro2::TokenStream {
     } else {
         quote! {
             impl<'a, #(#lock_bounds),*> #guard_name<'a, #(#generic_names),*> {
+                /// Drop all held locks and return a fresh builder for the same lock.
+                ///
+                /// This lets you re-acquire a different set of fields without dropping
+                /// the lock reference.
+                ///
+                /// **Warning:** There is a moment between dropping the old locks and
+                /// acquiring new ones where no locks are held. Other tasks may modify
+                /// fields during this gap. Do not assume atomicity across a `relock()`.
                 #vis fn relock(self) -> #relock_builder_ty {
                     let lock = self.lock;
                     drop(self);
@@ -175,6 +226,7 @@ pub fn generate(parsed: &ParsedStruct) -> proc_macro2::TokenStream {
     // Guard struct definition
     let guard_struct = if has_generics {
         quote! {
+            #[doc = #guard_doc]
             #vis struct #guard_name<'a, #(#impl_params),*, #(#generic_names),*> #where_clause {
                 #[doc(hidden)]
                 lock: &'a #lock_name #ty_generics,
@@ -183,6 +235,7 @@ pub fn generate(parsed: &ParsedStruct) -> proc_macro2::TokenStream {
         }
     } else {
         quote! {
+            #[doc = #guard_doc]
             #vis struct #guard_name<'a, #(#generic_names),*> {
                 #[doc(hidden)]
                 lock: &'a #lock_name,

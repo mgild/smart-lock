@@ -12,6 +12,16 @@ pub fn generate(parsed: &ParsedStruct) -> proc_macro2::TokenStream {
     let bare = parsed.bare_generic_params();
     let has_generics = parsed.has_generics();
 
+    let struct_name_str = struct_name.to_string();
+    let lock_doc = format!(
+        "Per-field async `RwLock` wrapper for [`{}`].\n\n\
+         Each field is independently lockable. Use [`.builder()`](Self::builder) to select \
+         which fields to lock and how, or [`.lock_all()`](Self::lock_all) / \
+         [`.lock_all_mut()`](Self::lock_all_mut) for convenience.\n\n\
+         Created by `#[smart_lock]` on `{}`.",
+        struct_name_str, struct_name_str
+    );
+
     let n = parsed.fields.len();
 
     let lock_fields: Vec<proc_macro2::TokenStream> = parsed
@@ -91,6 +101,7 @@ pub fn generate(parsed: &ParsedStruct) -> proc_macro2::TokenStream {
         .map(|field| {
             let name = &field.name;
             let ty = &field.ty;
+            let name_str = name.to_string();
             let read_method = format_ident!("read_{}", name);
             let write_method = format_ident!("write_{}", name);
             let try_read_method = format_ident!("try_read_{}", name);
@@ -98,27 +109,39 @@ pub fn generate(parsed: &ParsedStruct) -> proc_macro2::TokenStream {
             let upgrade_method = format_ident!("upgrade_{}", name);
             let try_upgrade_method = format_ident!("try_upgrade_{}", name);
 
+            let read_doc = format!("Acquire a shared read lock on `{}`.", name_str);
+            let write_doc = format!("Acquire an exclusive write lock on `{}`.", name_str);
+            let try_read_doc = format!("Try to acquire a shared read lock on `{}`. Returns `None` if the lock is held exclusively.", name_str);
+            let try_write_doc = format!("Try to acquire an exclusive write lock on `{}`. Returns `None` if the lock is held.", name_str);
+            let upgrade_doc = format!("Acquire an upgradable read lock on `{}`. Can be atomically upgraded to a write lock later.", name_str);
+            let try_upgrade_doc = format!("Try to acquire an upgradable read lock on `{}`. Returns `None` if another upgradable or write lock is held.", name_str);
             quote! {
+                #[doc = #read_doc]
                 #vis async fn #read_method(&self) -> smart_lock::RwLockReadGuard<'_, #ty> {
                     self.#name.read().await
                 }
 
+                #[doc = #write_doc]
                 #vis async fn #write_method(&self) -> smart_lock::RwLockWriteGuard<'_, #ty> {
                     self.#name.write().await
                 }
 
+                #[doc = #try_read_doc]
                 #vis fn #try_read_method(&self) -> Option<smart_lock::RwLockReadGuard<'_, #ty>> {
                     self.#name.try_read()
                 }
 
+                #[doc = #try_write_doc]
                 #vis fn #try_write_method(&self) -> Option<smart_lock::RwLockWriteGuard<'_, #ty>> {
                     self.#name.try_write()
                 }
 
+                #[doc = #upgrade_doc]
                 #vis async fn #upgrade_method(&self) -> smart_lock::RwLockUpgradableReadGuard<'_, #ty> {
                     self.#name.upgradable_read().await
                 }
 
+                #[doc = #try_upgrade_doc]
                 #vis fn #try_upgrade_method(&self) -> Option<smart_lock::RwLockUpgradableReadGuard<'_, #ty>> {
                     self.#name.try_upgradable_read()
                 }
@@ -135,14 +158,22 @@ pub fn generate(parsed: &ParsedStruct) -> proc_macro2::TokenStream {
         })
         .collect();
 
+    let into_inner_doc = format!(
+        "Consume the lock and return the original [`{}`] with all field values.",
+        struct_name_str
+    );
+
     let get_mut_accessors: Vec<proc_macro2::TokenStream> = parsed
         .fields
         .iter()
         .map(|field| {
             let name = &field.name;
             let ty = &field.ty;
+            let name_str = name.to_string();
             let method = format_ident!("get_mut_{}", name);
+            let get_mut_doc = format!("Get a mutable reference to `{}` without locking. Requires `&mut self`, guaranteeing exclusive access.", name_str);
             quote! {
+                #[doc = #get_mut_doc]
                 #vis fn #method(&mut self) -> &mut #ty {
                     self.#name.get_mut()
                 }
@@ -150,7 +181,6 @@ pub fn generate(parsed: &ParsedStruct) -> proc_macro2::TokenStream {
         })
         .collect();
 
-    // Use bare generics in type applications, full generics in impl blocks
     let builder_ty = if has_generics {
         quote!(#builder_name<'_, #(#bare),*, #(#all_unlocked),*>)
     } else {
@@ -170,31 +200,40 @@ pub fn generate(parsed: &ParsedStruct) -> proc_macro2::TokenStream {
     };
 
     quote! {
+        #[doc = #lock_doc]
         #vis struct #lock_name #impl_generics #where_clause {
             #(#lock_fields)*
         }
 
         impl #impl_generics #lock_name #ty_generics #where_clause {
+            /// Create a new lock wrapping each field in an `RwLock`.
             #vis fn new(#(#new_params),*) -> Self {
                 Self {
                     #(#new_inits)*
                 }
             }
 
+            /// Start building a lock request. Chain `.read_field()`, `.write_field()`,
+            /// or `.upgrade_field()` calls, then `.lock().await` to acquire.
+            ///
+            /// Locks are acquired in field declaration order to prevent deadlocks.
             #vis fn builder(&self) -> #builder_ty {
                 #builder_name { lock: self, _marker: std::marker::PhantomData }
             }
 
+            /// Read-lock all fields. Convenience for `builder().read_a().read_b()...lock().await`.
             #vis async fn lock_all(&self) -> #guard_all_read_ty {
                 #(#lock_all_fields)*
                 #guard_name { lock: self, #(#field_names),* }
             }
 
+            /// Write-lock all fields. Convenience for `builder().write_a().write_b()...lock().await`.
             #vis async fn lock_all_mut(&self) -> #guard_all_write_ty {
                 #(#lock_all_mut_fields)*
                 #guard_name { lock: self, #(#field_names),* }
             }
 
+            #[doc = #into_inner_doc]
             #vis fn into_inner(self) -> #struct_name #ty_generics {
                 #struct_name {
                     #(#into_inner_fields)*

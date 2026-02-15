@@ -332,37 +332,6 @@ async fn relock_allows_different_fields() {
     assert_eq!(*guard.data, vec![1, 2]);
 }
 
-// --- Debug ---
-
-#[tokio::test]
-async fn debug_shows_field_values() {
-    let state = MyStateLock::new(42, "test".into(), vec![1]);
-    let debug = format!("{:?}", state);
-    assert!(debug.contains("42"));
-    assert!(debug.contains("test"));
-}
-
-#[tokio::test]
-async fn debug_shows_locked_when_held() {
-    let state = MyStateLock::new(42, "test".into(), vec![]);
-    let _guard = state.write_counter().await;
-
-    let debug = format!("{:?}", state);
-    assert!(debug.contains("<locked>"));
-    assert!(debug.contains("test"));
-}
-
-// --- Default ---
-
-#[tokio::test]
-async fn default_impl() {
-    let state = MyStateLock::default();
-    let guard = state.lock_all().await;
-    assert_eq!(*guard.counter, 0);
-    assert_eq!(*guard.name, "");
-    assert_eq!(*guard.data, Vec::<u8>::new());
-}
-
 // --- Generic structs ---
 
 #[smart_lock]
@@ -401,13 +370,6 @@ async fn generic_struct_from() {
     let guard = state.lock_all().await;
     assert_eq!(*guard.value, 99);
     assert_eq!(*guard.count, 5);
-}
-
-#[tokio::test]
-async fn generic_struct_debug() {
-    let state = GenericStateLock::new(42i32, 0);
-    let debug = format!("{:?}", state);
-    assert!(debug.contains("42"));
 }
 
 #[tokio::test]

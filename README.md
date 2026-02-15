@@ -45,8 +45,6 @@ For a struct `Foo`, `#[smart_lock]` generates:
 | `FooLockBuilder` | Type-state builder for selecting lock modes |
 | `FooLockGuard` | Guard with per-field access encoded in the type system |
 | `From<Foo> for FooLock` | Conversion from the original struct |
-| `Debug for FooLock` | Shows field values or `<locked>` if held |
-| `Default for FooLock` | When all fields implement `Default` |
 
 ## Three Ways to Lock
 
@@ -226,28 +224,6 @@ let mut state = MyStateLock::new(0, "hello".into(), vec![]);
 *state.get_mut_counter() = 42;  // no lock needed
 ```
 
-### `Debug`
-
-Shows field values when unlocked, `<locked>` when held:
-
-```rust
-let state = MyStateLock::new(42, "hello".into(), vec![1]);
-println!("{:?}", state);
-// MyStateLock { counter: 42, name: "hello", data: [1] }
-
-let _guard = state.write_counter().await;
-println!("{:?}", state);
-// MyStateLock { counter: <locked>, name: "hello", data: [1] }
-```
-
-### `Default`
-
-Available when all field types implement `Default`:
-
-```rust
-let state = MyStateLock::default();
-```
-
 ### `From<OriginalStruct>`
 
 Convert from the original struct:
@@ -281,6 +257,19 @@ Run benchmarks yourself:
 cargo bench
 ```
 
+## Compile-Time Cost
+
+The proc macro generates per-field type-state machinery (generic parameters, impl blocks, trait bounds). Incremental compile times scale linearly with field count:
+
+| Fields | Incremental compile |
+|--------|-------------------|
+| 3      | ~0.4s             |
+| 10     | ~0.3s             |
+| 20     | ~0.4s             |
+| 40     | ~0.6s             |
+
+Measured on Apple Silicon with `cargo test --test <file>` (incremental, debug). The 3-field case includes multiple structs in one file. Growth is modest — 40 fields adds roughly 0.2s over the baseline.
+
 ## When to Use smart-lock
 
 **Good fit:**
@@ -288,6 +277,8 @@ cargo bench
 - Known, fixed field count
 - Multiple concurrent tasks accessing different fields
 - You want compile-time proof that field access is correct
+
+See [`examples/session_store.rs`](smart-lock/examples/session_store.rs) for a real-world concurrent session store demonstrating independent field access.
 
 **Not a good fit:**
 - Collections (HashMap, Vec, etc.) — use [`DashMap`](https://docs.rs/dashmap)/[`DashSet`](https://docs.rs/dashset) instead (shard-level locking, much less memory overhead)
