@@ -755,3 +755,91 @@ async fn no_lock_upgrade_downgrade() {
 
 // No read_synced/write_synced/try_*_synced/upgrade_synced methods should exist
 // (verified by not using them — if they existed, this would be redundant)
+
+// --- try_upgrade on guard ---
+
+#[tokio::test]
+async fn guard_try_upgrade_succeeds_when_no_readers() {
+    let state = MyStateLock::new(0, "hello".into(), vec![]);
+
+    let guard = state.builder().upgrade_counter().lock().await;
+    assert_eq!(*guard.counter, 0);
+
+    let mut guard = guard.try_upgrade_counter().unwrap();
+    *guard.counter = 42;
+    assert_eq!(*guard.counter, 42);
+}
+
+#[tokio::test]
+async fn guard_try_upgrade_fails_with_readers() {
+    let state = MyStateLock::new(0, "hello".into(), vec![]);
+
+    // Hold a read lock on counter
+    let _reader = state.read_counter().await;
+
+    let guard = state.builder().upgrade_counter().lock().await;
+
+    // try_upgrade should fail because there's an active reader
+    let guard = guard.try_upgrade_counter().unwrap_err();
+    // Original guard is returned, still readable
+    assert_eq!(*guard.counter, 0);
+}
+
+#[tokio::test]
+async fn guard_try_upgrade_preserves_other_fields() {
+    let state = MyStateLock::new(0, "hello".into(), vec![1, 2]);
+
+    let mut guard = state
+        .builder()
+        .upgrade_counter()
+        .read_name()
+        .write_data()
+        .lock()
+        .await;
+
+    guard.data.push(3);
+
+    let mut guard = guard.try_upgrade_counter().unwrap();
+    *guard.counter = 100;
+    assert_eq!(*guard.counter, 100);
+    assert_eq!(*guard.name, "hello");
+    assert_eq!(*guard.data, vec![1, 2, 3]);
+}
+
+#[tokio::test]
+async fn guard_try_upgrade_with_no_lock_field() {
+    let state = WithNoLockLock::new(0, AtomicU32::new(5), "test".into());
+
+    let guard = state.builder().upgrade_counter().read_name().lock().await;
+    assert_eq!(guard.synced.load(Ordering::Relaxed), 5);
+
+    let mut guard = guard.try_upgrade_counter().unwrap();
+    *guard.counter = 42;
+    assert_eq!(guard.synced.load(Ordering::Relaxed), 5);
+}
+
+// --- Debug impl ---
+
+#[tokio::test]
+async fn debug_impl() {
+    let state = MyStateLock::new(42, "hello".into(), vec![1, 2]);
+    let debug_str = format!("{:?}", state);
+    assert!(debug_str.contains("MyStateLock"));
+}
+
+#[tokio::test]
+async fn debug_impl_with_no_lock() {
+    let state = WithNoLockLock::new(1, AtomicU32::new(2), "test".into());
+    let debug_str = format!("{:?}", state);
+    assert!(debug_str.contains("WithNoLockLock"));
+}
+
+// --- Debug on guard (needed for try_upgrade Result) ---
+
+#[tokio::test]
+async fn guard_debug_impl() {
+    let state = MyStateLock::new(42, "hello".into(), vec![]);
+    let guard = state.builder().read_counter().lock().await;
+    let debug_str = format!("{:?}", guard);
+    assert!(debug_str.contains("MyStateLockGuard"));
+}

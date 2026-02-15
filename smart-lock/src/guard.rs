@@ -1,3 +1,4 @@
+use std::fmt;
 use std::marker::PhantomData;
 use std::ops::{Deref, DerefMut};
 use async_lock::{RwLock, RwLockReadGuard, RwLockUpgradableReadGuard, RwLockWriteGuard};
@@ -84,6 +85,30 @@ impl<'a, T> FieldGuard<'a, T, UpgradeLocked> {
     }
 }
 
+// --- Try upgrade: UpgradeLocked → WriteLocked (sync, non-blocking) ---
+impl<'a, T> FieldGuard<'a, T, UpgradeLocked> {
+    /// Try to upgrade from upgradable read to exclusive write without blocking.
+    /// Returns `Ok(WriteLocked)` on success, `Err(self)` if readers are active.
+    #[inline(always)]
+    pub fn try_upgrade(self) -> Result<FieldGuard<'a, T, WriteLocked>, Self> {
+        match self.inner {
+            FieldGuardInner::Upgrade(g) => {
+                match RwLockUpgradableReadGuard::try_upgrade(g) {
+                    Ok(write_guard) => Ok(FieldGuard {
+                        inner: FieldGuardInner::Write(write_guard),
+                        _mode: PhantomData,
+                    }),
+                    Err(upgrade_guard) => Err(FieldGuard {
+                        inner: FieldGuardInner::Upgrade(upgrade_guard),
+                        _mode: PhantomData,
+                    }),
+                }
+            }
+            _ => unreachable!(),
+        }
+    }
+}
+
 // --- Downgrade: WriteLocked → ReadLocked (sync, atomic) ---
 impl<'a, T> FieldGuard<'a, T, WriteLocked> {
     #[inline(always)]
@@ -108,6 +133,19 @@ impl<'a, T> FieldGuard<'a, T, UpgradeLocked> {
                 _mode: PhantomData,
             },
             _ => unreachable!(),
+        }
+    }
+}
+
+// --- Debug ---
+
+impl<T: fmt::Debug, M> fmt::Debug for FieldGuard<'_, T, M> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match &self.inner {
+            FieldGuardInner::Read(g) => fmt::Debug::fmt(&**g, f),
+            FieldGuardInner::Write(g) => fmt::Debug::fmt(&**g, f),
+            FieldGuardInner::Upgrade(g) => fmt::Debug::fmt(&**g, f),
+            FieldGuardInner::None => f.write_str("<unlocked>"),
         }
     }
 }

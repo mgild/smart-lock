@@ -64,6 +64,8 @@ pub fn generate(parsed: &ParsedStruct) -> proc_macro2::TokenStream {
         .map(|_| quote!(smart_lock::Unlocked))
         .collect();
 
+    let guard_name_str = guard_name.to_string();
+
     // --- Guard struct definition ---
     let guard_struct = quote! {
         #[doc = #guard_doc]
@@ -72,6 +74,12 @@ pub fn generate(parsed: &ParsedStruct) -> proc_macro2::TokenStream {
             #[doc(hidden)]
             lock: &'a #lock_name #ty_generics,
             #(#guard_fields)*
+        }
+
+        impl<'a, #impl_prefix #(#generic_names),*> std::fmt::Debug for #guard_name<'a, #bare_prefix #(#generic_names),*> #where_clause {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                f.debug_struct(#guard_name_str).finish_non_exhaustive()
+            }
         }
     };
 
@@ -138,7 +146,16 @@ pub fn generate(parsed: &ParsedStruct) -> proc_macro2::TokenStream {
         let read_output = make_params(quote!(smart_lock::ReadLocked));
         let write_input = make_params(quote!(smart_lock::WriteLocked));
 
-        // Upgrade from UpgradeLocked + Downgrade from UpgradeLocked
+        let try_upgrade_method = format_ident!("try_upgrade_{}", field_name);
+        let try_upgrade_doc = format!(
+            "Try to upgrade `{}` from upgradable read to exclusive write without blocking.\n\n\
+             Returns `Ok` with the upgraded guard on success, or `Err` with the original \
+             guard unchanged if other readers are active.\n\n\
+             Unlike `.upgrade_{}().await`, this never blocks and cannot deadlock.",
+            field_name_str, field_name_str
+        );
+
+        // Upgrade from UpgradeLocked + Downgrade from UpgradeLocked + Try upgrade
         transition_impls.push(quote! {
             impl<'a, #impl_prefix #(#free_generics),*> #guard_name<'a, #bare_prefix #(#upgrade_input),*> #where_clause {
                 #[doc = #upgrade_doc]
@@ -147,6 +164,22 @@ pub fn generate(parsed: &ParsedStruct) -> proc_macro2::TokenStream {
                         lock: self.lock,
                         #field_name: self.#field_name.upgrade().await,
                         #(#other_fields)*
+                    }
+                }
+
+                #[doc = #try_upgrade_doc]
+                #vis fn #try_upgrade_method(self) -> Result<#guard_name<'a, #bare_prefix #(#write_output),*>, Self> {
+                    match self.#field_name.try_upgrade() {
+                        Ok(upgraded) => Ok(#guard_name {
+                            lock: self.lock,
+                            #field_name: upgraded,
+                            #(#other_fields)*
+                        }),
+                        Err(original) => Err(#guard_name {
+                            lock: self.lock,
+                            #field_name: original,
+                            #(#other_fields)*
+                        }),
                     }
                 }
 

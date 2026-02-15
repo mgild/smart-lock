@@ -356,3 +356,48 @@ fn no_lock_lock_rest_read() {
         assert_eq!(&*guard.name, "rest");
     });
 }
+
+// --- try_upgrade on guard ---
+
+#[test]
+fn guard_try_upgrade_succeeds() {
+    block_on(async {
+        let state = MyStateLock::new(0, String::new(), vec![]);
+        let guard = state.builder().upgrade_counter().lock().await;
+        let mut guard = guard.try_upgrade_counter().unwrap();
+        *guard.counter = 42;
+        assert_eq!(*guard.counter, 42);
+    });
+}
+
+#[test]
+fn guard_try_upgrade_fails_returns_original() {
+    block_on(async {
+        let state = MyStateLock::new(0, String::new(), vec![]);
+        let _reader = state.read_counter().await;
+        let guard = state.builder().upgrade_counter().lock().await;
+        let guard = guard.try_upgrade_counter().unwrap_err();
+        assert_eq!(*guard.counter, 0); // still readable
+    });
+}
+
+// --- Debug ---
+
+#[test]
+fn debug_impl() {
+    let state = MyStateLock::new(42, "hello".into(), vec![1]);
+    let debug_str = format!("{:?}", state);
+    assert!(debug_str.contains("MyStateLock"));
+}
+
+// --- Guard Debug ---
+
+#[test]
+fn guard_debug_impl() {
+    block_on(async {
+        let state = MyStateLock::new(0, String::new(), vec![]);
+        let guard = state.builder().read_counter().lock().await;
+        let debug_str = format!("{:?}", guard);
+        assert!(debug_str.contains("MyStateLockGuard"));
+    });
+}

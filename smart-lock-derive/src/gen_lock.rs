@@ -251,8 +251,9 @@ pub fn generate(parsed: &ParsedStruct) -> proc_macro2::TokenStream {
         .collect();
 
     // Static assertion that the Lock type is Send + Sync.
-    // Uses a hidden const fn that requires Send + Sync bounds.
     let assert_name = format_ident!("_assert_{}_send_sync", lock_name);
+
+    let lock_name_str_debug = lock_name.to_string();
 
     quote! {
         #[doc = #lock_doc]
@@ -268,6 +269,12 @@ pub fn generate(parsed: &ParsedStruct) -> proc_macro2::TokenStream {
                 _require_send_sync::<#lock_name #ty_generics>();
             }
         };
+
+        impl<#impl_prefix> std::fmt::Debug for #lock_name #ty_generics #where_clause {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                f.debug_struct(#lock_name_str_debug).finish_non_exhaustive()
+            }
+        }
 
         impl<#impl_prefix> #lock_name #ty_generics #where_clause {
             /// Create a new lock wrapping each field in an `RwLock`.
