@@ -17,7 +17,13 @@ pub fn smart_lock(attr: TokenStream, item: TokenStream) -> TokenStream {
         Err(e) => return e.to_compile_error().into(),
     };
 
-    let original = &item_struct;
+    let mut clean_struct = item_struct.clone();
+    if let syn::Fields::Named(ref mut fields) = clean_struct.fields {
+        for field in &mut fields.named {
+            field.attrs.retain(|a| !a.path().is_ident("no_lock"));
+        }
+    }
+    let original = &clean_struct;
     let lock = gen_lock::generate(&parsed);
     let guard = gen_guard::generate(&parsed);
     let builder = gen_builder::generate(&parsed);

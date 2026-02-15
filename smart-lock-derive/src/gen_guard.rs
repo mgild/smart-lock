@@ -19,12 +19,27 @@ pub fn generate(parsed: &ParsedStruct) -> proc_macro2::TokenStream {
          - **`WriteLocked`**: `*guard.field` for read, `*guard.field = val` for write\n\
          - **`ReadLocked`**: `*guard.field` for read only (mutation is a compile error)\n\
          - **`UpgradeLocked`**: `*guard.field` for read, `.upgrade_field().await` to promote to write\n\
-         - **`Unlocked`**: compile error on any access\n\n\
+         - **`Unlocked`**: compile error on any access\n\
+         - **`#[no_lock]`**: always accessible as `&T` (no locking needed)\n\n\
          All locks are released when the guard is dropped."
     );
 
-    let n = parsed.fields.len();
-    let generic_names: Vec<syn::Ident> = (0..n)
+    // Map field index → generic index (None for no_lock fields)
+    let field_to_generic: Vec<Option<usize>> = {
+        let mut gi = 0;
+        parsed.fields.iter().map(|f| {
+            if f.no_lock {
+                None
+            } else {
+                let idx = gi;
+                gi += 1;
+                Some(idx)
+            }
+        }).collect()
+    };
+
+    let locked_count = field_to_generic.iter().filter(|g| g.is_some()).count();
+    let generic_names: Vec<syn::Ident> = (0..locked_count)
         .map(|i| format_ident!("F{}", i))
         .collect();
 
@@ -35,14 +50,17 @@ pub fn generate(parsed: &ParsedStruct) -> proc_macro2::TokenStream {
         .map(|(i, field)| {
             let name = &field.name;
             let ty = &field.ty;
-            let f = &generic_names[i];
-            quote! {
-                pub #name: smart_lock::FieldGuard<'a, #ty, #f>,
+            if field.no_lock {
+                quote! { pub #name: &'a #ty, }
+            } else {
+                let gi = field_to_generic[i].unwrap();
+                let f = &generic_names[gi];
+                quote! { pub #name: smart_lock::FieldGuard<'a, #ty, #f>, }
             }
         })
         .collect();
 
-    let all_unlocked: Vec<proc_macro2::TokenStream> = (0..n)
+    let all_unlocked: Vec<proc_macro2::TokenStream> = (0..locked_count)
         .map(|_| quote!(smart_lock::Unlocked))
         .collect();
 
@@ -57,10 +75,13 @@ pub fn generate(parsed: &ParsedStruct) -> proc_macro2::TokenStream {
         }
     };
 
-    // --- Upgrade/downgrade impl blocks per field ---
+    // --- Upgrade/downgrade impl blocks per field (locked fields only) ---
     let mut transition_impls = Vec::new();
 
     for (i, field) in parsed.fields.iter().enumerate() {
+        if field.no_lock { continue; }
+
+        let gi = field_to_generic[i].unwrap();
         let field_name = &field.name;
         let field_name_str = field_name.to_string();
         let upgrade_method = format_ident!("upgrade_{}", field_name);
@@ -85,7 +106,7 @@ pub fn generate(parsed: &ParsedStruct) -> proc_macro2::TokenStream {
         let free_generics: Vec<&syn::Ident> = generic_names
             .iter()
             .enumerate()
-            .filter(|(j, _)| *j != i)
+            .filter(|(j, _)| *j != gi)
             .map(|(_, name)| name)
             .collect();
 
@@ -100,8 +121,8 @@ pub fn generate(parsed: &ParsedStruct) -> proc_macro2::TokenStream {
             .collect();
 
         let make_params = |mode: proc_macro2::TokenStream| -> Vec<proc_macro2::TokenStream> {
-            (0..n).map(|j| {
-                if j == i { mode.clone() } else { let f = &generic_names[j]; quote!(#f) }
+            (0..locked_count).map(|j| {
+                if j == gi { mode.clone() } else { let f = &generic_names[j]; quote!(#f) }
             }).collect()
         };
 

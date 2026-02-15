@@ -23,8 +23,22 @@ pub fn generate(parsed: &ParsedStruct) -> proc_macro2::TokenStream {
          is a compile error)."
     );
 
-    let n = parsed.fields.len();
-    let generic_names: Vec<syn::Ident> = (0..n)
+    // Map field index → generic index (None for no_lock fields)
+    let field_to_generic: Vec<Option<usize>> = {
+        let mut gi = 0;
+        parsed.fields.iter().map(|f| {
+            if f.no_lock {
+                None
+            } else {
+                let idx = gi;
+                gi += 1;
+                Some(idx)
+            }
+        }).collect()
+    };
+
+    let locked_count = field_to_generic.iter().filter(|g| g.is_some()).count();
+    let generic_names: Vec<syn::Ident> = (0..locked_count)
         .map(|i| format_ident!("F{}", i))
         .collect();
 
@@ -38,10 +52,13 @@ pub fn generate(parsed: &ParsedStruct) -> proc_macro2::TokenStream {
         }
     };
 
-    // --- Per-field impl blocks ---
+    // --- Per-field impl blocks (locked fields only) ---
     let mut field_impls = Vec::new();
 
     for (i, field) in parsed.fields.iter().enumerate() {
+        if field.no_lock { continue; }
+
+        let gi = field_to_generic[i].unwrap();
         let field_name = &field.name;
         let field_name_str = field_name.to_string();
         let write_method = format_ident!("write_{}", field_name);
@@ -55,31 +72,31 @@ pub fn generate(parsed: &ParsedStruct) -> proc_macro2::TokenStream {
         let free_generics: Vec<&syn::Ident> = generic_names
             .iter()
             .enumerate()
-            .filter(|(j, _)| *j != i)
+            .filter(|(j, _)| *j != gi)
             .map(|(_, name)| name)
             .collect();
 
-        let input_params: Vec<proc_macro2::TokenStream> = (0..n)
+        let input_params: Vec<proc_macro2::TokenStream> = (0..locked_count)
             .map(|j| {
-                if j == i { quote!(smart_lock::Unlocked) } else { let f = &generic_names[j]; quote!(#f) }
+                if j == gi { quote!(smart_lock::Unlocked) } else { let f = &generic_names[j]; quote!(#f) }
             })
             .collect();
 
-        let write_params: Vec<proc_macro2::TokenStream> = (0..n)
+        let write_params: Vec<proc_macro2::TokenStream> = (0..locked_count)
             .map(|j| {
-                if j == i { quote!(smart_lock::WriteLocked) } else { let f = &generic_names[j]; quote!(#f) }
+                if j == gi { quote!(smart_lock::WriteLocked) } else { let f = &generic_names[j]; quote!(#f) }
             })
             .collect();
 
-        let read_params: Vec<proc_macro2::TokenStream> = (0..n)
+        let read_params: Vec<proc_macro2::TokenStream> = (0..locked_count)
             .map(|j| {
-                if j == i { quote!(smart_lock::ReadLocked) } else { let f = &generic_names[j]; quote!(#f) }
+                if j == gi { quote!(smart_lock::ReadLocked) } else { let f = &generic_names[j]; quote!(#f) }
             })
             .collect();
 
-        let upgrade_params: Vec<proc_macro2::TokenStream> = (0..n)
+        let upgrade_params: Vec<proc_macro2::TokenStream> = (0..locked_count)
             .map(|j| {
-                if j == i { quote!(smart_lock::UpgradeLocked) } else { let f = &generic_names[j]; quote!(#f) }
+                if j == gi { quote!(smart_lock::UpgradeLocked) } else { let f = &generic_names[j]; quote!(#f) }
             })
             .collect();
 
@@ -116,13 +133,18 @@ pub fn generate(parsed: &ParsedStruct) -> proc_macro2::TokenStream {
         .map(|(i, field)| {
             let name = &field.name;
             let ty = &field.ty;
-            let f = &generic_names[i];
-            quote! {
-                let #name = if <#f as smart_lock::LockMode>::MODE == smart_lock::LockModeKind::None {
-                    smart_lock::FieldGuard::<'_, #ty, #f>::unlocked()
-                } else {
-                    smart_lock::FieldGuard::<'_, #ty, #f>::acquire(&self.lock.#name).await
-                };
+            if field.no_lock {
+                quote! { let #name = &self.lock.#name; }
+            } else {
+                let gi = field_to_generic[i].unwrap();
+                let f = &generic_names[gi];
+                quote! {
+                    let #name = if <#f as smart_lock::LockMode>::MODE == smart_lock::LockModeKind::None {
+                        smart_lock::FieldGuard::<'_, #ty, #f>::unlocked()
+                    } else {
+                        smart_lock::FieldGuard::<'_, #ty, #f>::acquire(&self.lock.#name).await
+                    };
+                }
             }
         })
         .collect();
@@ -134,13 +156,18 @@ pub fn generate(parsed: &ParsedStruct) -> proc_macro2::TokenStream {
         .map(|(i, field)| {
             let name = &field.name;
             let ty = &field.ty;
-            let f = &generic_names[i];
-            quote! {
-                let #name = if <#f as smart_lock::LockMode>::MODE == smart_lock::LockModeKind::None {
-                    smart_lock::FieldGuard::<'_, #ty, #f>::unlocked()
-                } else {
-                    smart_lock::FieldGuard::<'_, #ty, #f>::try_acquire(&self.lock.#name)?
-                };
+            if field.no_lock {
+                quote! { let #name = &self.lock.#name; }
+            } else {
+                let gi = field_to_generic[i].unwrap();
+                let f = &generic_names[gi];
+                quote! {
+                    let #name = if <#f as smart_lock::LockMode>::MODE == smart_lock::LockModeKind::None {
+                        smart_lock::FieldGuard::<'_, #ty, #f>::unlocked()
+                    } else {
+                        smart_lock::FieldGuard::<'_, #ty, #f>::try_acquire(&self.lock.#name)?
+                    };
+                }
             }
         })
         .collect();
@@ -188,9 +215,14 @@ pub fn generate(parsed: &ParsedStruct) -> proc_macro2::TokenStream {
         .map(|(i, field)| {
             let name = &field.name;
             let ty = &field.ty;
-            let f = &generic_names[i];
-            quote! {
-                let #name = smart_lock::FieldGuard::<'_, #ty, <#f as smart_lock::DefaultRead>::Output>::acquire(&self.lock.#name).await;
+            if field.no_lock {
+                quote! { let #name = &self.lock.#name; }
+            } else {
+                let gi = field_to_generic[i].unwrap();
+                let f = &generic_names[gi];
+                quote! {
+                    let #name = smart_lock::FieldGuard::<'_, #ty, <#f as smart_lock::DefaultRead>::Output>::acquire(&self.lock.#name).await;
+                }
             }
         })
         .collect();
@@ -202,9 +234,14 @@ pub fn generate(parsed: &ParsedStruct) -> proc_macro2::TokenStream {
         .map(|(i, field)| {
             let name = &field.name;
             let ty = &field.ty;
-            let f = &generic_names[i];
-            quote! {
-                let #name = smart_lock::FieldGuard::<'_, #ty, <#f as smart_lock::DefaultRead>::Output>::try_acquire(&self.lock.#name)?;
+            if field.no_lock {
+                quote! { let #name = &self.lock.#name; }
+            } else {
+                let gi = field_to_generic[i].unwrap();
+                let f = &generic_names[gi];
+                quote! {
+                    let #name = smart_lock::FieldGuard::<'_, #ty, <#f as smart_lock::DefaultRead>::Output>::try_acquire(&self.lock.#name)?;
+                }
             }
         })
         .collect();

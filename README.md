@@ -204,6 +204,40 @@ let guard = guard.relock()
 assert_eq!(*guard.counter, 42);
 ```
 
+## Self-synchronized Fields (`#[no_lock]`)
+
+Fields that are already internally synchronized (e.g., `AtomicU32`, `Mutex<T>`, `DashMap`) don't need `RwLock` wrapping. Mark them with `#[no_lock]` to store them as bare `T` and expose them as `&T` on the guard — always accessible, no lock mode needed:
+
+```rust
+use std::sync::atomic::{AtomicU32, Ordering};
+
+#[smart_lock]
+struct MyState {
+    counter: u32,
+    #[no_lock]
+    request_count: AtomicU32,
+    name: String,
+}
+
+#[tokio::main]
+async fn main() {
+    let state = MyStateLock::new(0, AtomicU32::new(0), "hello".into());
+
+    let mut guard = state.builder().write_counter().read_name().lock().await;
+    *guard.counter += 1;
+
+    // request_count is always accessible — no lock mode needed
+    guard.request_count.fetch_add(1, Ordering::Relaxed);
+}
+```
+
+`#[no_lock]` fields:
+- Are **stored** as bare `T` in the lock struct (not `RwLock<T>`)
+- Are **exposed** as `&T` on the guard (always accessible, regardless of which fields are locked)
+- Have **no builder methods** (`read_*`/`write_*`/`upgrade_*` are not generated)
+- Are **skipped** in `lock_all()`/`lock_all_mut()` lock acquisition (no locking overhead)
+- Work with `into_inner()`, `From`, and `get_mut_*`
+
 ## Deadlock Prevention
 
 The builder acquires locks in **field declaration order**, regardless of the order you call the builder methods. This prevents ABBA deadlocks:

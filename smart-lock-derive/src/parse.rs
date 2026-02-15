@@ -7,6 +7,7 @@ pub struct ParsedField {
     #[allow(dead_code)]
     pub vis: Visibility,
     pub attrs: Vec<Attribute>,
+    pub no_lock: bool,
 }
 
 pub struct ParsedStruct {
@@ -107,11 +108,19 @@ pub fn parse(attr: proc_macro2::TokenStream, item: &ItemStruct) -> syn::Result<P
 
     let fields: Vec<ParsedField> = named_fields
         .iter()
-        .map(|f| ParsedField {
-            name: f.ident.clone().unwrap(),
-            ty: f.ty.clone(),
-            vis: f.vis.clone(),
-            attrs: f.attrs.clone(),
+        .map(|f| {
+            let no_lock = f.attrs.iter().any(|a| a.path().is_ident("no_lock"));
+            let attrs: Vec<Attribute> = f.attrs.iter()
+                .filter(|a| !a.path().is_ident("no_lock"))
+                .cloned()
+                .collect();
+            ParsedField {
+                name: f.ident.clone().unwrap(),
+                ty: f.ty.clone(),
+                vis: f.vis.clone(),
+                attrs,
+                no_lock,
+            }
         })
         .collect();
 

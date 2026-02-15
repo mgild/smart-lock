@@ -96,6 +96,31 @@
 //! # });
 //! ```
 //!
+//! # Self-synchronized Fields (`#[no_lock]`)
+//!
+//! Fields that are already internally synchronized don't need `RwLock` wrapping.
+//! Mark them with `#[no_lock]` to store them as bare `T` and access them as `&T`
+//! on the guard — always accessible, no lock mode needed:
+//!
+//! ```rust
+//! # use smart_lock::smart_lock;
+//! use std::sync::atomic::{AtomicU32, Ordering};
+//!
+//! #[smart_lock]
+//! struct MyState {
+//!     counter: u32,
+//!     #[no_lock]
+//!     request_count: AtomicU32,
+//! }
+//!
+//! # tokio_test::block_on(async {
+//! let state = MyStateLock::new(0, AtomicU32::new(0));
+//! let mut guard = state.builder().write_counter().lock().await;
+//! *guard.counter += 1;
+//! guard.request_count.fetch_add(1, Ordering::Relaxed); // always accessible
+//! # });
+//! ```
+//!
 //! # Generated Types
 //!
 //! For a struct `Foo`, `#[smart_lock]` generates:

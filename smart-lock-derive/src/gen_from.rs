@@ -14,8 +14,10 @@ pub fn generate(parsed: &ParsedStruct) -> proc_macro2::TokenStream {
         .iter()
         .map(|field| {
             let name = &field.name;
-            quote! {
-                #name: smart_lock::RwLock::new(value.#name),
+            if field.no_lock {
+                quote! { #name: value.#name, }
+            } else {
+                quote! { #name: smart_lock::RwLock::new(value.#name), }
             }
         })
         .collect();

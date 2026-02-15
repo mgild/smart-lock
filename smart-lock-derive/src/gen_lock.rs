@@ -23,7 +23,7 @@ pub fn generate(parsed: &ParsedStruct) -> proc_macro2::TokenStream {
         struct_name_str, struct_name_str
     );
 
-    let n = parsed.fields.len();
+    let locked_count = parsed.fields.iter().filter(|f| !f.no_lock).count();
 
     let lock_fields: Vec<proc_macro2::TokenStream> = parsed
         .fields
@@ -32,9 +32,16 @@ pub fn generate(parsed: &ParsedStruct) -> proc_macro2::TokenStream {
             let name = &field.name;
             let ty = &field.ty;
             let attrs = &field.attrs;
-            quote! {
-                #(#attrs)*
-                #name: smart_lock::RwLock<#ty>,
+            if field.no_lock {
+                quote! {
+                    #(#attrs)*
+                    #name: #ty,
+                }
+            } else {
+                quote! {
+                    #(#attrs)*
+                    #name: smart_lock::RwLock<#ty>,
+                }
             }
         })
         .collect();
@@ -54,19 +61,21 @@ pub fn generate(parsed: &ParsedStruct) -> proc_macro2::TokenStream {
         .iter()
         .map(|field| {
             let name = &field.name;
-            quote! {
-                #name: smart_lock::RwLock::new(#name),
+            if field.no_lock {
+                quote! { #name, }
+            } else {
+                quote! { #name: smart_lock::RwLock::new(#name), }
             }
         })
         .collect();
 
-    let all_unlocked: Vec<proc_macro2::TokenStream> = (0..n)
+    let all_unlocked: Vec<proc_macro2::TokenStream> = (0..locked_count)
         .map(|_| quote!(smart_lock::Unlocked))
         .collect();
-    let all_read: Vec<proc_macro2::TokenStream> = (0..n)
+    let all_read: Vec<proc_macro2::TokenStream> = (0..locked_count)
         .map(|_| quote!(smart_lock::ReadLocked))
         .collect();
-    let all_write: Vec<proc_macro2::TokenStream> = (0..n)
+    let all_write: Vec<proc_macro2::TokenStream> = (0..locked_count)
         .map(|_| quote!(smart_lock::WriteLocked))
         .collect();
 
@@ -76,8 +85,12 @@ pub fn generate(parsed: &ParsedStruct) -> proc_macro2::TokenStream {
         .map(|field| {
             let name = &field.name;
             let ty = &field.ty;
-            quote! {
-                let #name = smart_lock::FieldGuard::<'_, #ty, smart_lock::ReadLocked>::acquire(&self.#name).await;
+            if field.no_lock {
+                quote! { let #name = &self.#name; }
+            } else {
+                quote! {
+                    let #name = smart_lock::FieldGuard::<'_, #ty, smart_lock::ReadLocked>::acquire(&self.#name).await;
+                }
             }
         })
         .collect();
@@ -88,8 +101,12 @@ pub fn generate(parsed: &ParsedStruct) -> proc_macro2::TokenStream {
         .map(|field| {
             let name = &field.name;
             let ty = &field.ty;
-            quote! {
-                let #name = smart_lock::FieldGuard::<'_, #ty, smart_lock::WriteLocked>::acquire(&self.#name).await;
+            if field.no_lock {
+                quote! { let #name = &self.#name; }
+            } else {
+                quote! {
+                    let #name = smart_lock::FieldGuard::<'_, #ty, smart_lock::WriteLocked>::acquire(&self.#name).await;
+                }
             }
         })
         .collect();
@@ -100,8 +117,12 @@ pub fn generate(parsed: &ParsedStruct) -> proc_macro2::TokenStream {
         .map(|field| {
             let name = &field.name;
             let ty = &field.ty;
-            quote! {
-                let #name = smart_lock::FieldGuard::<'_, #ty, smart_lock::ReadLocked>::try_acquire(&self.#name)?;
+            if field.no_lock {
+                quote! { let #name = &self.#name; }
+            } else {
+                quote! {
+                    let #name = smart_lock::FieldGuard::<'_, #ty, smart_lock::ReadLocked>::try_acquire(&self.#name)?;
+                }
             }
         })
         .collect();
@@ -112,8 +133,12 @@ pub fn generate(parsed: &ParsedStruct) -> proc_macro2::TokenStream {
         .map(|field| {
             let name = &field.name;
             let ty = &field.ty;
-            quote! {
-                let #name = smart_lock::FieldGuard::<'_, #ty, smart_lock::WriteLocked>::try_acquire(&self.#name)?;
+            if field.no_lock {
+                quote! { let #name = &self.#name; }
+            } else {
+                quote! {
+                    let #name = smart_lock::FieldGuard::<'_, #ty, smart_lock::WriteLocked>::try_acquire(&self.#name)?;
+                }
             }
         })
         .collect();
@@ -123,6 +148,7 @@ pub fn generate(parsed: &ParsedStruct) -> proc_macro2::TokenStream {
     let per_field_accessors: Vec<proc_macro2::TokenStream> = parsed
         .fields
         .iter()
+        .filter(|f| !f.no_lock)
         .map(|field| {
             let name = &field.name;
             let ty = &field.ty;
@@ -179,7 +205,11 @@ pub fn generate(parsed: &ParsedStruct) -> proc_macro2::TokenStream {
         .iter()
         .map(|field| {
             let name = &field.name;
-            quote! { #name: self.#name.into_inner(), }
+            if field.no_lock {
+                quote! { #name: self.#name, }
+            } else {
+                quote! { #name: self.#name.into_inner(), }
+            }
         })
         .collect();
 
@@ -200,11 +230,21 @@ pub fn generate(parsed: &ParsedStruct) -> proc_macro2::TokenStream {
             let ty = &field.ty;
             let name_str = name.to_string();
             let method = format_ident!("get_mut_{}", name);
-            let get_mut_doc = format!("Get a mutable reference to `{}` without locking. Requires `&mut self`, guaranteeing exclusive access.", name_str);
-            quote! {
-                #[doc = #get_mut_doc]
-                #vis fn #method(&mut self) -> &mut #ty {
-                    self.#name.get_mut()
+            if field.no_lock {
+                let get_mut_doc = format!("Get a mutable reference to `{}` (not wrapped in `RwLock`).", name_str);
+                quote! {
+                    #[doc = #get_mut_doc]
+                    #vis fn #method(&mut self) -> &mut #ty {
+                        &mut self.#name
+                    }
+                }
+            } else {
+                let get_mut_doc = format!("Get a mutable reference to `{}` without locking. Requires `&mut self`, guaranteeing exclusive access.", name_str);
+                quote! {
+                    #[doc = #get_mut_doc]
+                    #vis fn #method(&mut self) -> &mut #ty {
+                        self.#name.get_mut()
+                    }
                 }
             }
         })

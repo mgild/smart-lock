@@ -582,3 +582,176 @@ async fn lock_rest_read_all_unlocked() {
     assert_eq!(*guard.name, "all");
     assert_eq!(*guard.data, vec![1]);
 }
+
+// --- #[no_lock] fields ---
+
+use std::sync::atomic::{AtomicU32, Ordering};
+
+#[smart_lock]
+struct WithNoLock {
+    counter: u32,
+    #[no_lock]
+    synced: AtomicU32,
+    name: String,
+}
+
+#[tokio::test]
+async fn no_lock_accessible_through_guard() {
+    let state = WithNoLockLock::new(0, AtomicU32::new(42), "hello".into());
+    let guard = state.lock_all().await;
+    assert_eq!(guard.synced.load(Ordering::Relaxed), 42);
+    assert_eq!(*guard.counter, 0);
+    assert_eq!(*guard.name, "hello");
+}
+
+#[tokio::test]
+async fn no_lock_accessible_in_lock_all_mut() {
+    let state = WithNoLockLock::new(0, AtomicU32::new(10), "test".into());
+    let mut guard = state.lock_all_mut().await;
+    guard.synced.store(99, Ordering::Relaxed);
+    *guard.counter = 5;
+    assert_eq!(guard.synced.load(Ordering::Relaxed), 99);
+    assert_eq!(*guard.counter, 5);
+}
+
+#[tokio::test]
+async fn no_lock_mixed_builder() {
+    let state = WithNoLockLock::new(0, AtomicU32::new(1), "mixed".into());
+
+    let mut guard = state.builder().write_counter().read_name().lock().await;
+    *guard.counter = 42;
+    // synced is always accessible as &AtomicU32
+    guard.synced.store(100, Ordering::Relaxed);
+    assert_eq!(guard.synced.load(Ordering::Relaxed), 100);
+    assert_eq!(*guard.counter, 42);
+    assert_eq!(*guard.name, "mixed");
+}
+
+#[tokio::test]
+async fn no_lock_lock_rest_read() {
+    let state = WithNoLockLock::new(5, AtomicU32::new(10), "rest".into());
+
+    let mut guard = state.builder().write_counter().lock_rest_read().await;
+    *guard.counter += 1;
+    guard.synced.store(20, Ordering::Relaxed);
+    assert_eq!(*guard.counter, 6);
+    assert_eq!(guard.synced.load(Ordering::Relaxed), 20);
+    assert_eq!(*guard.name, "rest");
+}
+
+#[tokio::test]
+async fn no_lock_try_lock_all() {
+    let state = WithNoLockLock::new(1, AtomicU32::new(2), "try".into());
+
+    let guard = state.try_lock_all();
+    assert!(guard.is_some());
+    let guard = guard.unwrap();
+    assert_eq!(guard.synced.load(Ordering::Relaxed), 2);
+    assert_eq!(*guard.counter, 1);
+}
+
+#[tokio::test]
+async fn no_lock_try_lock_all_mut() {
+    let state = WithNoLockLock::new(0, AtomicU32::new(0), String::new());
+
+    let guard = state.try_lock_all_mut();
+    assert!(guard.is_some());
+    let mut guard = guard.unwrap();
+    *guard.counter = 99;
+    guard.synced.store(88, Ordering::Relaxed);
+    assert_eq!(*guard.counter, 99);
+    assert_eq!(guard.synced.load(Ordering::Relaxed), 88);
+}
+
+#[tokio::test]
+async fn no_lock_try_lock_builder() {
+    let state = WithNoLockLock::new(0, AtomicU32::new(0), String::new());
+
+    let guard = state.builder().write_counter().try_lock();
+    assert!(guard.is_some());
+    let mut guard = guard.unwrap();
+    *guard.counter = 10;
+    guard.synced.store(20, Ordering::Relaxed);
+    assert_eq!(*guard.counter, 10);
+    assert_eq!(guard.synced.load(Ordering::Relaxed), 20);
+}
+
+#[tokio::test]
+async fn no_lock_try_lock_rest_read() {
+    let state = WithNoLockLock::new(0, AtomicU32::new(5), "t".into());
+
+    let guard = state.builder().write_counter().try_lock_rest_read();
+    assert!(guard.is_some());
+    let guard = guard.unwrap();
+    assert_eq!(guard.synced.load(Ordering::Relaxed), 5);
+}
+
+#[tokio::test]
+async fn no_lock_into_inner() {
+    let state = WithNoLockLock::new(42, AtomicU32::new(99), "inner".into());
+    let original = state.into_inner();
+    assert_eq!(original.counter, 42);
+    assert_eq!(original.synced.load(Ordering::Relaxed), 99);
+    assert_eq!(original.name, "inner");
+}
+
+#[tokio::test]
+async fn no_lock_from() {
+    let original = WithNoLock {
+        counter: 10,
+        synced: AtomicU32::new(20),
+        name: "from".into(),
+    };
+    let state: WithNoLockLock = original.into();
+    let guard = state.lock_all().await;
+    assert_eq!(*guard.counter, 10);
+    assert_eq!(guard.synced.load(Ordering::Relaxed), 20);
+    assert_eq!(*guard.name, "from");
+}
+
+#[tokio::test]
+async fn no_lock_get_mut() {
+    let mut state = WithNoLockLock::new(0, AtomicU32::new(0), String::new());
+    *state.get_mut_counter() = 42;
+    *state.get_mut_synced() = AtomicU32::new(99);
+    *state.get_mut_name() = "mutated".into();
+
+    let guard = state.lock_all().await;
+    assert_eq!(*guard.counter, 42);
+    assert_eq!(guard.synced.load(Ordering::Relaxed), 99);
+    assert_eq!(*guard.name, "mutated");
+}
+
+#[tokio::test]
+async fn no_lock_relock() {
+    let state = WithNoLockLock::new(0, AtomicU32::new(0), "hello".into());
+
+    let mut guard = state.builder().write_counter().lock().await;
+    *guard.counter = 42;
+    guard.synced.store(10, Ordering::Relaxed);
+
+    let guard = guard.relock().read_counter().read_name().lock().await;
+    assert_eq!(*guard.counter, 42);
+    assert_eq!(guard.synced.load(Ordering::Relaxed), 10);
+    assert_eq!(*guard.name, "hello");
+}
+
+#[tokio::test]
+async fn no_lock_upgrade_downgrade() {
+    let state = WithNoLockLock::new(0, AtomicU32::new(0), "test".into());
+
+    let guard = state.builder().upgrade_counter().read_name().lock().await;
+    assert_eq!(*guard.counter, 0);
+    guard.synced.store(5, Ordering::Relaxed);
+
+    let mut guard = guard.upgrade_counter().await;
+    *guard.counter = 99;
+    assert_eq!(guard.synced.load(Ordering::Relaxed), 5);
+
+    let guard = guard.downgrade_counter();
+    assert_eq!(*guard.counter, 99);
+    assert_eq!(guard.synced.load(Ordering::Relaxed), 5);
+}
+
+// No read_synced/write_synced/try_*_synced/upgrade_synced methods should exist
+// (verified by not using them — if they existed, this would be redundant)
